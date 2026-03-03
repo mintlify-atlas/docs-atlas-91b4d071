@@ -1,0 +1,192 @@
+---
+title: Statistics
+description: Track chaos injection metrics and performance
+---
+
+Cruel automatically tracks statistics about chaos injection, including call counts, failure rates, and latency percentiles.
+
+## Get statistics
+
+```typescript
+import { cruel } from "cruel"
+
+const api = cruel(fetch, { fail: 0.1, delay: [100, 500] })
+
+// Make some requests
+for (let i = 0; i < 100; i++) {
+  try {
+    await api("https://api.example.com")
+  } catch (e) {
+    // Handle errors
+  }
+}
+
+// Get statistics
+const stats = cruel.stats()
+console.log(stats)
+```
+
+## Statistics output
+
+```typescript
+{
+  // Call metrics
+  calls: 100,
+  failures: 12,
+  timeouts: 5,
+  delays: 85,
+  corrupted: 3,
+  rateLimited: 8,
+  streamsCut: 2,
+  
+  // Latency metrics
+  latencies: [125, 234, 456, ...], // All latencies
+  p50: 250,  // 50th percentile
+  p95: 480,  // 95th percentile
+  p99: 495,  // 99th percentile
+  avg: 285,  // Average
+  min: 102,  // Minimum
+  max: 498,  // Maximum
+  
+  // Per-target metrics
+  byTarget: Map<string, {
+    calls: number
+    failures: number
+    latencies: number[]
+  }>
+}
+```
+
+## Reset statistics
+
+```typescript
+// Clear all statistics
+cruel.resetStats()
+
+const stats = cruel.stats()
+console.log(stats.calls) // 0
+```
+
+## Per-target tracking
+
+```typescript
+import { cruel } from "cruel"
+
+const fetchUsers = cruel(fetch, { fail: 0.1 })
+const fetchPosts = cruel(fetch, { fail: 0.2 })
+
+// Make requests
+await fetchUsers("https://api.example.com/users")
+await fetchPosts("https://api.example.com/posts")
+
+// Check per-target stats
+const stats = cruel.stats()
+for (const [target, metrics] of stats.byTarget) {
+  console.log(`${target}: ${metrics.failures}/${metrics.calls} failed`)
+}
+```
+
+## Monitoring in tests
+
+```typescript
+import { test, beforeEach } from "bun:test"
+import { cruel } from "cruel"
+
+beforeEach(() => {
+  cruel.resetStats()
+})
+
+test("tracks failure rate", async () => {
+  const api = cruel(fetch, { fail: 0.1 })
+  
+  // Make 100 requests
+  const promises = Array.from({ length: 100 }, () => 
+    api("https://api.example.com").catch(() => {})
+  )
+  await Promise.all(promises)
+  
+  const stats = cruel.stats()
+  expect(stats.calls).toBe(100)
+  expect(stats.failures).toBeGreaterThan(0)
+  expect(stats.failures).toBeLessThan(20) // ~10% ± variance
+})
+
+test("tracks latency", async () => {
+  const api = cruel(fetch, { delay: [100, 500] })
+  
+  for (let i = 0; i < 50; i++) {
+    await api("https://api.example.com")
+  }
+  
+  const stats = cruel.stats()
+  expect(stats.p50).toBeGreaterThan(100)
+  expect(stats.p95).toBeLessThan(600)
+})
+```
+
+## Real-time monitoring
+
+```typescript
+import { cruel } from "cruel"
+
+// Monitor statistics in real-time
+setInterval(() => {
+  const stats = cruel.stats()
+  const failureRate = stats.failures / stats.calls
+  
+  console.log(`Calls: ${stats.calls}`)
+  console.log(`Failure rate: ${(failureRate * 100).toFixed(2)}%`)
+  console.log(`P50 latency: ${stats.p50}ms`)
+  console.log(`P95 latency: ${stats.p95}ms`)
+}, 5000)
+```
+
+## Exporting statistics
+
+```typescript
+import { cruel } from "cruel"
+import fs from "fs"
+
+// Export to JSON
+const stats = cruel.stats()
+const exportData = {
+  timestamp: new Date().toISOString(),
+  metrics: {
+    calls: stats.calls,
+    failures: stats.failures,
+    failureRate: stats.failures / stats.calls,
+    p50: stats.p50,
+    p95: stats.p95,
+    p99: stats.p99,
+  },
+}
+
+fs.writeFileSync(
+  "chaos-stats.json",
+  JSON.stringify(exportData, null, 2)
+)
+```
+
+## Percentile calculations
+
+Percentiles help understand latency distribution:
+
+- **p50 (median)**: 50% of requests were faster than this
+- **p95**: 95% of requests were faster than this (tail latency)
+- **p99**: 99% of requests were faster than this (worst-case latency)
+
+```typescript
+const stats = cruel.stats()
+
+if (stats.p99 > 1000) {
+  console.warn("High tail latency detected")
+}
+```
+
+<Note>
+Statistics are global and track all chaos injections across all wrapped functions.
+</Note>
+
+<Tip>
+Use `cruel.resetStats()` at the start of each test to get clean metrics.
+</Tip>

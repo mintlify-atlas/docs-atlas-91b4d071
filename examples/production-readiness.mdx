@@ -1,0 +1,577 @@
+---
+title: Production Readiness
+description: Prepare your chaos tests for production deployment
+---
+
+# Production Readiness
+
+Learn best practices for using chaos engineering in production environments.
+
+## Environment Configuration
+
+Only enable chaos in appropriate environments:
+
+```typescript
+import { cruel } from 'cruel'
+
+const chaosEnabled = process.env.NODE_ENV === 'development' ||
+                    process.env.NODE_ENV === 'staging' ||
+                    process.env.ENABLE_CHAOS === 'true'
+
+if (chaosEnabled) {
+  cruel.configure({
+    enabled: true,
+    seed: process.env.CHAOS_SEED ? parseInt(process.env.CHAOS_SEED) : undefined,
+    log: true
+  })
+}
+
+async function fetchAPI() {
+  const response = await fetch('https://api.example.com/data')
+  return response.json()
+}
+
+// Only applies chaos in allowed environments
+const wrapped = chaosEnabled
+  ? cruel(fetchAPI, { fail: 0.01, delay: [50, 200] })
+  : fetchAPI
+
+const data = await wrapped()
+```
+
+## Gradual Rollout
+
+Start with low chaos intensity:
+
+<Steps>
+
+### Phase 1: Development
+
+```typescript
+import { cruel, presets } from 'cruel'
+
+const chaos = {
+  development: {
+    fail: 0.1,
+    delay: [100, 500],
+    timeout: 0.05
+  },
+  staging: {
+    fail: 0.05,
+    delay: [50, 200],
+    timeout: 0.02
+  },
+  production: {
+    fail: 0.01,
+    delay: [10, 100],
+    timeout: 0.005
+  }
+}
+
+const env = process.env.NODE_ENV || 'development'
+const config = chaos[env]
+
+const resilient = cruel(fetchAPI, config)
+```
+
+### Phase 2: Staging
+
+```typescript
+// Gradually increase chaos in staging
+const stagingIntensity = parseFloat(process.env.CHAOS_INTENSITY || '0.5')
+
+const resilient = cruel(fetchAPI, {
+  fail: 0.05 * stagingIntensity,
+  delay: [50, 200],
+  timeout: 0.02 * stagingIntensity
+})
+```
+
+### Phase 3: Production (Controlled)
+
+```typescript
+// Very low intensity in production
+const productionChaos = {
+  enabled: process.env.PRODUCTION_CHAOS === 'true',
+  fail: 0.001,  // 0.1% failure rate
+  delay: [5, 50] // Minimal delay
+}
+
+if (productionChaos.enabled) {
+  console.log('Production chaos enabled (low intensity)')
+}
+```
+
+</Steps>
+
+## Feature Flags
+
+Use feature flags to control chaos:
+
+```typescript
+import { cruel } from 'cruel'
+
+class FeatureFlaggedChaos {
+  private flags = new Map<string, boolean>()
+
+  setFlag(name: string, enabled: boolean) {
+    this.flags.set(name, enabled)
+  }
+
+  isEnabled(name: string): boolean {
+    return this.flags.get(name) ?? false
+  }
+
+  wrap<T extends Function>(fn: T, flag: string, options: any): T {
+    if (!this.isEnabled(flag)) {
+      return fn
+    }
+    return cruel(fn, options)
+  }
+}
+
+const chaos = new FeatureFlaggedChaos()
+
+// Set flags (from config service, LaunchDarkly, etc.)
+chaos.setFlag('api-chaos', process.env.ENABLE_API_CHAOS === 'true')
+chaos.setFlag('db-chaos', false)
+
+// Apply chaos based on flags
+const apiCall = chaos.wrap(fetchAPI, 'api-chaos', {
+  fail: 0.05,
+  delay: [100, 300]
+})
+
+const dbQuery = chaos.wrap(queryDB, 'db-chaos', {
+  delay: 50
+})
+```
+
+## Monitoring and Observability
+
+Track chaos impact in production:
+
+```typescript
+import { cruel } from 'cruel'
+
+class ChaosMonitor {
+  private metrics = {
+    totalCalls: 0,
+    chaosInjected: 0,
+    failuresInjected: 0,
+    delaysInjected: 0,
+    avgDelay: 0
+  }
+
+  wrap<T extends Function>(fn: T, options: any): T {
+    return cruel(fn, {
+      ...options,
+      enabled: process.env.CHAOS_ENABLED === 'true'
+    }) as T
+  }
+
+  track() {
+    return cruel.on((event) => {
+      this.metrics.totalCalls++
+
+      switch (event.type) {
+        case 'failure':
+          this.metrics.chaosInjected++
+          this.metrics.failuresInjected++
+          break
+        case 'delay':
+          this.metrics.chaosInjected++
+          this.metrics.delaysInjected++
+          break
+      }
+
+      // Send to monitoring service
+      this.sendMetrics()
+    })
+  }
+
+  private sendMetrics() {
+    // Send to DataDog, New Relic, etc.
+    console.log('[monitoring]', this.metrics)
+  }
+
+  getMetrics() {
+    return { ...this.metrics }
+  }
+}
+
+const monitor = new ChaosMonitor()
+monitor.track()
+
+const resilient = monitor.wrap(fetchAPI, {
+  fail: 0.01,
+  delay: [10, 50]
+})
+```
+
+## Safe Rollback
+
+Implement emergency rollback:
+
+```typescript
+import { cruel } from 'cruel'
+
+class SafeChaosController {
+  private emergencyDisable = false
+  private errorCount = 0
+  private readonly errorThreshold = 100
+
+  constructor() {
+    // Check for emergency disable flag every 10s
+    setInterval(() => this.checkEmergencyDisable(), 10000)
+  }
+
+  private async checkEmergencyDisable() {
+    try {
+      // Check remote config
+      const config = await fetch('https://config.example.com/chaos')
+      const data = await config.json()
+      this.emergencyDisable = data.emergencyDisable
+
+      if (this.emergencyDisable) {
+        console.warn('[chaos] Emergency disable activated')
+        cruel.disable()
+      }
+    } catch (error) {
+      console.error('[chaos] Failed to check emergency disable:', error)
+    }
+  }
+
+  wrap<T extends Function>(fn: T, options: any): T {
+    if (this.emergencyDisable) {
+      return fn
+    }
+
+    return cruel(fn, {
+      ...options,
+      onError: () => {
+        this.errorCount++
+
+        // Auto-disable if too many errors
+        if (this.errorCount >= this.errorThreshold) {
+          console.error('[chaos] Error threshold reached, disabling chaos')
+          this.emergencyDisable = true
+          cruel.disable()
+        }
+      }
+    }) as T
+  }
+}
+
+const controller = new SafeChaosController()
+const resilient = controller.wrap(fetchAPI, { fail: 0.01 })
+```
+
+## Production AI Testing
+
+Safe AI chaos in production:
+
+```typescript
+import { cruelModel, diagnostics } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+
+class ProductionAIChaos {
+  private ctx = diagnostics.context()
+  private requestId = 0
+  private enabled: boolean
+
+  constructor() {
+    this.enabled = process.env.AI_CHAOS_ENABLED === 'true'
+  }
+
+  createModel() {
+    const baseModel = openai('gpt-4o')
+
+    if (!this.enabled) {
+      return baseModel
+    }
+
+    // Very low intensity for production
+    return cruelModel(baseModel, {
+      rateLimit: 0.001,  // 0.1%
+      delay: [10, 50],   // Minimal delay
+      onChaos: diagnostics.tracker(this.ctx)
+    })
+  }
+
+  async generate(prompt: string) {
+    const id = ++this.requestId
+    const model = this.createModel()
+
+    diagnostics.before(this.ctx, id)
+    const start = Date.now()
+
+    try {
+      const result = await generateText({ model, prompt })
+      diagnostics.success(this.ctx, id, Date.now() - start, result.text)
+      return result
+    } catch (error) {
+      diagnostics.failure(this.ctx, id, Date.now() - start, error)
+      
+      // Log to monitoring service
+      this.logError(error)
+      
+      throw error
+    }
+  }
+
+  private logError(error: any) {
+    console.error('[ai-chaos] Error:', {
+      message: error.message,
+      stats: diagnostics.stats(this.ctx)
+    })
+  }
+
+  getHealthMetrics() {
+    return diagnostics.stats(this.ctx)
+  }
+}
+
+const ai = new ProductionAIChaos()
+```
+
+## Canary Deployments
+
+Test chaos on a subset of traffic:
+
+```typescript
+import { cruel } from 'cruel'
+
+function shouldApplyChaos(): boolean {
+  // 5% of requests get chaos
+  return Math.random() < 0.05
+}
+
+function createHandler() {
+  return async (req: Request) => {
+    const fetchData = async () => {
+      const response = await fetch('https://api.example.com/data')
+      return response.json()
+    }
+
+    // Apply chaos to canary traffic
+    const fn = shouldApplyChaos()
+      ? cruel(fetchData, { fail: 0.05, delay: [50, 200] })
+      : fetchData
+
+    try {
+      const data = await fn()
+      return new Response(JSON.stringify(data))
+    } catch (error) {
+      return new Response('Error', { status: 500 })
+    }
+  }
+}
+
+const handler = createHandler()
+```
+
+## Health Checks
+
+Monitor chaos impact:
+
+```typescript
+import { cruel } from 'cruel'
+
+class HealthMonitor {
+  private startTime = Date.now()
+  private stats = cruel.stats()
+
+  getHealth() {
+    const current = cruel.stats()
+    const uptime = Date.now() - this.startTime
+
+    const errorRate = current.calls > 0
+      ? current.failures / current.calls
+      : 0
+
+    const avgLatency = current.avg
+
+    return {
+      status: errorRate < 0.1 ? 'healthy' : 'degraded',
+      uptime,
+      metrics: {
+        totalCalls: current.calls,
+        errorRate: (errorRate * 100).toFixed(2) + '%',
+        avgLatency: avgLatency + 'ms',
+        p95: current.p95 + 'ms',
+        p99: current.p99 + 'ms'
+      },
+      chaos: {
+        enabled: cruel.isEnabled(),
+        injectedFailures: current.failures,
+        injectedTimeouts: current.timeouts
+      }
+    }
+  }
+}
+
+const health = new HealthMonitor()
+
+// Health endpoint
+app.get('/health', (req, res) => {
+  res.json(health.getHealth())
+})
+```
+
+## Best Practices Checklist
+
+<CodeGroup>
+```typescript configuration
+// 1. Environment-aware configuration
+const chaosConfig = {
+  development: { enabled: true, intensity: 'high' },
+  staging: { enabled: true, intensity: 'medium' },
+  production: { enabled: false } // Start disabled
+}
+```
+
+```typescript monitoring
+// 2. Comprehensive monitoring
+cruel.on((event) => {
+  // Send to APM
+  apm.recordEvent('chaos', event)
+  
+  // Alert on high failure rate
+  if (event.type === 'failure') {
+    checkThresholds()
+  }
+})
+```
+
+```typescript fallbacks
+// 3. Always have fallbacks
+const resilient = cruel.fallback(
+  apiCall,
+  { fallback: cachedData }
+)
+```
+
+```typescript killswitch
+// 4. Implement kill switch
+if (emergencyDisable) {
+  cruel.disable()
+  console.warn('Chaos disabled via kill switch')
+}
+```
+
+```typescript gradual
+// 5. Gradual rollout
+const intensity = parseFloat(
+  process.env.CHAOS_INTENSITY || '0.1'
+) // Start at 10%
+```
+</CodeGroup>
+
+## Complete Production Example
+
+```typescript
+import { cruel, presets } from 'cruel'
+
+class ProductionChaosService {
+  private enabled: boolean
+  private intensity: number
+  private emergencyStop = false
+
+  constructor() {
+    this.enabled = process.env.CHAOS_ENABLED === 'true'
+    this.intensity = parseFloat(process.env.CHAOS_INTENSITY || '0.1')
+
+    this.setupMonitoring()
+    this.setupKillSwitch()
+  }
+
+  private setupMonitoring() {
+    cruel.on((event) => {
+      // Send to DataDog/NewRelic
+      this.sendMetric(event)
+
+      // Alert on high failure rate
+      const stats = cruel.stats()
+      const errorRate = stats.failures / stats.calls
+
+      if (errorRate > 0.2) {
+        this.alert('High error rate detected', { errorRate })
+      }
+    })
+  }
+
+  private setupKillSwitch() {
+    // Check kill switch every 30s
+    setInterval(async () => {
+      try {
+        const config = await this.fetchConfig()
+        if (config.emergencyDisable) {
+          this.emergencyStop = true
+          cruel.disable()
+          this.alert('Chaos emergency disabled', {})
+        }
+      } catch (error) {
+        console.error('Kill switch check failed:', error)
+      }
+    }, 30000)
+  }
+
+  wrap<T extends Function>(fn: T, service: string): T {
+    if (!this.enabled || this.emergencyStop) {
+      return fn
+    }
+
+    // Apply low-intensity chaos
+    return cruel(fn, {
+      fail: 0.01 * this.intensity,
+      delay: [10, 50],
+      timeout: 0.005 * this.intensity
+    }) as T
+  }
+
+  private sendMetric(event: any) {
+    // Send to monitoring service
+    console.log('[metric]', event)
+  }
+
+  private alert(message: string, data: any) {
+    // Send to PagerDuty/Slack
+    console.error('[alert]', message, data)
+  }
+
+  private async fetchConfig() {
+    // Fetch from config service
+    return { emergencyDisable: false }
+  }
+
+  getStatus() {
+    return {
+      enabled: this.enabled,
+      intensity: this.intensity,
+      emergencyStop: this.emergencyStop,
+      stats: cruel.stats()
+    }
+  }
+}
+
+const chaos = new ProductionChaosService()
+
+// Use in application
+const fetchAPI = chaos.wrap(async () => {
+  const response = await fetch('https://api.example.com/data')
+  return response.json()
+}, 'api')
+
+// Status endpoint
+app.get('/chaos/status', (req, res) => {
+  res.json(chaos.getStatus())
+})
+```
+
+## Next Steps
+
+- Review [Basic Chaos Examples](/examples/basic-chaos)
+- Study [Combining Patterns](/examples/combining-patterns)
+- Explore [Testing Integration](/examples/testing-integration)

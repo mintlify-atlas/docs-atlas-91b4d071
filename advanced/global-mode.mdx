@@ -1,0 +1,136 @@
+---
+title: Global mode
+description: Enable chaos globally across all wrapped functions
+---
+
+Global mode allows you to enable or disable chaos injection across all wrapped functions without modifying each wrapper individually.
+
+## Enable global chaos
+
+Activate chaos globally with custom options:
+
+```typescript
+import { cruel } from "cruel"
+
+// Enable global chaos
+cruel.enable({
+  fail: 0.1,
+  delay: [100, 500],
+  timeout: 0.05,
+})
+
+// All wrapped functions will now have chaos injected
+const api = cruel(fetch)
+const db = cruel(query)
+```
+
+## Disable global chaos
+
+```typescript
+// Disable all chaos
+cruel.disable()
+
+// Functions still work but without chaos
+await api("https://api.example.com")
+```
+
+## Toggle chaos
+
+```typescript
+// Toggle chaos on/off
+const enabled = cruel.toggle()
+console.log(enabled) // true or false
+
+// Check if enabled
+if (cruel.isEnabled()) {
+  console.log("Chaos is active")
+}
+```
+
+## Scoped chaos
+
+Apply chaos only within a specific scope:
+
+```typescript
+import { cruel } from "cruel"
+
+// Normal execution
+await api("/normal")
+
+// Chaos only in this scope
+await cruel.scope(async () => {
+  await api("/chaotic") // Has chaos
+  await db.query("SELECT *") // Has chaos
+}, {
+  fail: 0.3,
+  delay: [500, 2000],
+})
+
+// Back to normal
+await api("/normal-again")
+```
+
+## Configuration
+
+Configure global behavior:
+
+```typescript
+cruel.configure({
+  enabled: true,
+  seed: 12345, // Deterministic mode
+  log: true,   // Log chaos events
+  safe: true,  // Prevent destructive operations
+})
+```
+
+## Reset everything
+
+```typescript
+// Reset all state
+cruel.reset()
+
+// Clears:
+// - Global chaos config
+// - All scenarios
+// - All profiles
+// - Statistics
+// - Event handlers
+// - Fetch patches
+```
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Testing" icon="flask">
+    Enable chaos in test environments without code changes
+  </Card>
+  <Card title="Development" icon="code">
+    Toggle chaos on/off during development
+  </Card>
+  <Card title="CI/CD" icon="robot">
+    Conditional chaos based on environment variables
+  </Card>
+  <Card title="Debugging" icon="bug">
+    Temporarily disable chaos to isolate issues
+  </Card>
+</CardGroup>
+
+## Environment-based chaos
+
+```typescript
+import { cruel } from "cruel"
+
+// Enable based on environment
+if (process.env.NODE_ENV === "development") {
+  cruel.enable(cruel.presets.development)
+} else if (process.env.CHAOS_ENABLED === "true") {
+  cruel.enable({
+    fail: parseFloat(process.env.CHAOS_FAIL_RATE || "0.1"),
+    delay: [100, 500],
+  })
+}
+```
+
+<Note>
+Global mode affects all functions wrapped with `cruel()`. Individual wrapper options are merged with global options.
+</Note>

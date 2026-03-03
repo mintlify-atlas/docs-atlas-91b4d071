@@ -1,0 +1,262 @@
+---
+title: "HTTP Chaos API"
+description: "HTTP-level chaos testing methods for simulating HTTP errors and conditions"
+---
+
+## cruel.http.status()
+
+Returns specific HTTP status codes at a given rate.
+
+```typescript
+function status<T extends AnyFn>(fn: T, code: number | number[], rate = 1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="code" type="number | number[]" required>
+  HTTP status code or array of codes to return randomly
+</ParamField>
+
+<ParamField path="rate" type="number" default="1">
+  Rate at which to return the status code (0-1). Default is 1 (100%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelHttpError` with the specified status code
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const sometimes404 = cruel.http.status(async () => {
+  return fetch('/api/user')
+}, 404, 0.1) // 10% chance of 404
+
+const randomErrors = cruel.http.status(async () => {
+  return fetch('/api/data')
+}, [400, 404, 500]) // Random error from array
+```
+
+---
+
+## cruel.http.rateLimit()
+
+Simulates API rate limiting.
+
+```typescript
+function rateLimit<T extends AnyFn>(
+  fn: T,
+  opts: number | { rate: number; retryAfter?: number } = 0.1
+): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="opts" type="number | object" default="0.1">
+  Rate limit configuration. Can be a number (rate) or object with options
+  
+  <Expandable title="object properties">
+    <ParamField path="rate" type="number" required>
+      Rate at which to trigger rate limit (0-1)
+    </ParamField>
+    <ParamField path="retryAfter" type="number">
+      Retry-After value in seconds
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelRateLimitError(retryAfter)` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const limitedApi = cruel.http.rateLimit(async () => {
+  return fetch('/api/search')
+}, { rate: 0.2, retryAfter: 60 }) // 20% rate limited, retry after 60s
+```
+
+---
+
+## cruel.http.serverError()
+
+Simulates server errors (500, 502, 503, 504).
+
+```typescript
+function serverError<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Server error rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws random server errors (500/502/503/504)
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const unreliableServer = cruel.http.serverError(async () => {
+  return fetch('/api/data')
+}, 0.15) // 15% server errors
+```
+
+---
+
+## cruel.http.clientError()
+
+Simulates client errors (400, 401, 403, 404).
+
+```typescript
+function clientError<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Client error rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws random client errors (400/401/403/404)
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const validateInput = cruel.http.clientError(async (data: any) => {
+  return api.submit(data)
+}, 0.05) // 5% client errors
+```
+
+---
+
+## cruel.http.slowResponse()
+
+Adds delay to simulate slow HTTP responses.
+
+```typescript
+function slowResponse<T extends AnyFn>(fn: T, ms: number | [number, number] = [1000, 5000]): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="ms" type="number | [number, number]" default="[1000, 5000]">
+  Delay in milliseconds, or range [min, max]. Default is 1-5 seconds
+</ParamField>
+
+**Returns:** `T` - Function with added response delay
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowEndpoint = cruel.http.slowResponse(async () => {
+  return fetch('/api/heavy-query')
+}, [2000, 8000]) // 2-8 second delay
+```
+
+---
+
+## cruel.http.badGateway()
+
+Simulates 502 Bad Gateway errors.
+
+```typescript
+function badGateway<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  502 error rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelHttpError(502)` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const proxyApi = cruel.http.badGateway(async () => {
+  return fetch('/api/proxied')
+})
+```
+
+---
+
+## cruel.http.serviceUnavailable()
+
+Simulates 503 Service Unavailable errors.
+
+```typescript
+function serviceUnavailable<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  503 error rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelHttpError(503)` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const maintenanceMode = cruel.http.serviceUnavailable(async () => {
+  return fetch('/api/status')
+}, 0.3) // 30% unavailable
+```
+
+---
+
+## cruel.http.gatewayTimeout()
+
+Simulates 504 Gateway Timeout errors.
+
+```typescript
+function gatewayTimeout<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  504 error rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelHttpError(504)` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowBackend = cruel.http.gatewayTimeout(async () => {
+  return fetch('/api/slow-service')
+}, 0.05) // 5% timeout
+```

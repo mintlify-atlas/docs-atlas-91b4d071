@@ -1,80 +1,150 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Cruel in under 5 minutes
 ---
 
-## Get started in three steps
+This guide will help you inject your first chaos and start testing your application's resilience.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Install Cruel">
+    Install Cruel using your package manager:
 
-### Step 1: Set up your local environment
+    <CodeGroup>
+      ```bash npm
+      npm install cruel
+      ```
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+      ```bash yarn
+      yarn add cruel
+      ```
 
-### Step 2: Deploy your changes
+      ```bash pnpm
+      pnpm add cruel
+      ```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+      ```bash bun
+      bun add cruel
+      ```
+    </CodeGroup>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Inject basic chaos">
+    Wrap any async function with `cruel()` to inject failures, delays, and timeouts:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```typescript
+    import { cruel } from "cruel"
 
-### Step 3: Go live
+    // Wrap your API function
+    const api = cruel(fetch, {
+      fail: 0.1,          // 10% of calls will fail
+      delay: [100, 500],  // Add 100-500ms random delay
+      timeout: 0.05,      // 5% of calls will timeout
+    })
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    // Use it like the original function
+    const res = await api("https://api.example.com")
+    ```
+
+    The `cruel()` function returns a wrapped version that behaves identically to the original, but with chaos injected based on your configuration.
+  </Step>
+
+  <Step title="Use shorthand helpers">
+    Cruel provides convenient shortcuts for common chaos patterns:
+
+    ```typescript
+    import { cruel } from "cruel"
+
+    // 10% failure rate
+    const failingApi = cruel.fail(fetch, 0.1)
+
+    // Add 500ms delay to every call
+    const slowApi = cruel.slow(fetch, 500)
+
+    // Random delays between 200-1000ms
+    const laggyApi = cruel.slow(fetch, [200, 1000])
+
+    // 10% of calls never resolve
+    const timeoutApi = cruel.timeout(fetch, 0.1)
+
+    // Random chaos (failures, timeouts, delays)
+    const flakyApi = cruel.flaky(fetch)
+
+    // Extreme chaos
+    const nightmareApi = cruel.nightmare(fetch)
+    ```
+
+    These helpers make it easy to test specific failure modes without writing full configuration objects.
+  </Step>
+
+  <Step title="Test resilience patterns">
+    Combine chaos with resilience patterns like circuit breakers and retries:
+
+    ```typescript
+    import { cruel } from "cruel"
+
+    // Simulate a flaky API
+    let attempts = 0
+    const flakyTask = async () => {
+      attempts++
+      if (attempts < 3) throw new Error("Service temporarily unavailable")
+      return { success: true, attempts }
+    }
+
+    // Add resilience with retry and circuit breaker
+    const resilientApi = cruel.compose(flakyTask, {
+      retry: {
+        attempts: 4,
+        delay: 100,
+        backoff: "exponential",  // 100ms, 200ms, 400ms
+      },
+      circuitBreaker: {
+        threshold: 5,    // Open circuit after 5 failures
+        timeout: 30000,  // Try again after 30 seconds
+      },
+      fallback: { success: false, cached: true },
+    })
+
+    const result = await resilientApi()
+    console.log(result) // { success: true, attempts: 3 }
+    ```
+
+    The `cruel.compose()` function lets you combine chaos with multiple resilience patterns in a single wrapper.
+  </Step>
+
+  <Step title="Explore specialized chaos">
+    Cruel provides domain-specific chaos for network, HTTP, streams, and AI:
+
+    ```typescript
+    import { cruel } from "cruel"
+
+    // Network chaos
+    const unstableNetwork = cruel.network.packetLoss(fetch, 0.1)
+    const slowNetwork = cruel.network.latency(fetch, [100, 500])
+    const offlineNetwork = cruel.network.offline(fetch)
+
+    // HTTP chaos
+    const serverErrors = cruel.http.serverError(fetch, 0.1)
+    const rateLimited = cruel.http.rateLimit(fetch, 0.05)
+    const badGateway = cruel.http.badGateway(fetch, 0.1)
+
+    // Stream chaos (for streaming responses)
+    const cutStreams = cruel.stream.cut(streamFn, 0.1)
+    const corruptStreams = cruel.stream.corrupt(streamFn, 0.05)
+
+    // AI-specific chaos (rate limits, context length, etc.)
+    const aiChaos = cruel.ai.realistic(generateText)
+    const aiNightmare = cruel.ai.nightmare(generateText)
+    ```
+
+    Each namespace provides functions tailored to specific failure modes you'll encounter in production.
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you've injected your first chaos, you can:
 
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+- Read the [installation guide](/installation) for detailed setup instructions
+- Explore [core concepts](/concepts/chaos-injection) to understand chaos configuration
+- Check out the [API reference](/api/cruel) for all available functions
+- Learn about [resilience patterns](/resilience/circuit-breaker) for building fault-tolerant systems

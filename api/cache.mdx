@@ -1,0 +1,82 @@
+---
+title: Cache
+description: Cache function results with configurable TTL
+---
+
+## Function Signature
+
+```typescript
+function withCache<T extends AnyFn>(
+  fn: T,
+  options: CacheOptions<ReturnType<T>>
+): T
+```
+
+Wraps a function with caching. Stores results in memory with configurable time-to-live (TTL).
+
+## Options
+
+<ParamField path="ttl" type="number" required>
+  Time-to-live in milliseconds. Cached values expire after this duration.
+</ParamField>
+
+<ParamField path="key" type="(...args: unknown[]) => string">
+  Custom key function to generate cache keys from function arguments. Defaults to `JSON.stringify(args)`.
+</ParamField>
+
+<ParamField path="onHit" type="(key: string) => void">
+  Callback invoked when a cached value is found and returned.
+</ParamField>
+
+<ParamField path="onMiss" type="(key: string) => void">
+  Callback invoked when no cached value is found and the function is executed.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function with caching.
+
+## Types
+
+```typescript
+interface CacheOptions<T> {
+  ttl: number
+  key?: (...args: unknown[]) => string
+  onHit?: (key: string) => void
+  onMiss?: (key: string) => void
+}
+```
+
+## Example
+
+```typescript
+import { withCache } from 'cruel'
+
+const cachedFetch = withCache(
+  async (url: string) => {
+    const response = await fetch(url)
+    return response.json()
+  },
+  {
+    ttl: 60000, // Cache for 1 minute
+    key: (url) => `fetch:${url}`,
+    onHit: (key) => {
+      console.log(`Cache hit: ${key}`)
+    },
+    onMiss: (key) => {
+      console.log(`Cache miss: ${key}`)
+    }
+  }
+)
+
+// First call - fetches from API
+const data1 = await cachedFetch('https://api.example.com/data')
+
+// Second call within TTL - returns cached value
+const data2 = await cachedFetch('https://api.example.com/data')
+
+// Call after TTL expires - fetches from API again
+setTimeout(async () => {
+  const data3 = await cachedFetch('https://api.example.com/data')
+}, 61000)
+```

@@ -1,0 +1,65 @@
+---
+title: Timeout
+description: Add timeout protection to prevent functions from running indefinitely
+---
+
+## Function Signature
+
+```typescript
+function withTimeout<T extends AnyFn>(
+  fn: T,
+  options: TimeoutOptions
+): T
+```
+
+Wraps a function with timeout protection. Throws `CruelTimeoutError` if the function doesn't complete within the specified time.
+
+## Options
+
+<ParamField path="ms" type="number" required>
+  Timeout duration in milliseconds. Must be at least 1.
+</ParamField>
+
+<ParamField path="onTimeout" type="() => void">
+  Callback invoked when the timeout is triggered.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function with timeout protection.
+
+## Types
+
+```typescript
+interface TimeoutOptions {
+  ms: number
+  onTimeout?: () => void
+}
+```
+
+## Example
+
+```typescript
+import { withTimeout, CruelTimeoutError } from 'cruel'
+
+const timedFetch = withTimeout(
+  async (url: string) => {
+    const response = await fetch(url)
+    return response.json()
+  },
+  {
+    ms: 5000,
+    onTimeout: () => {
+      console.error('Request timed out after 5s')
+    }
+  }
+)
+
+try {
+  const data = await timedFetch('https://api.example.com/slow-endpoint')
+} catch (error) {
+  if (error instanceof CruelTimeoutError) {
+    console.log('Request exceeded timeout')
+  }
+}
+```

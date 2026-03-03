@@ -1,0 +1,493 @@
+---
+title: AI SDK Streaming
+description: Test AI streaming with chaos using Vercel AI SDK
+---
+
+# AI SDK Streaming
+
+Test AI streaming applications with realistic chaos scenarios using Cruel's AI SDK integration.
+
+## Basic AI SDK Integration
+
+Wrap AI SDK models with chaos:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4o'), {
+  rateLimit: 0.05,
+  slowTokens: [30, 100]
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Write a haiku about code'
+})
+
+console.log(result.text)
+```
+
+## Stream Chaos
+
+Inject failures during streaming:
+
+<Tabs>
+  <Tab title="Stream Cut">
+    Simulate stream interruptions:
+
+    ```typescript
+    import { openai } from '@ai-sdk/openai'
+    import { streamText } from 'ai'
+    import { cruelModel } from 'cruel/ai-sdk'
+
+    const model = cruelModel(openai('gpt-4o'), {
+      streamCut: 0.3 // 30% chance stream cuts mid-response
+    })
+
+    try {
+      const result = streamText({
+        model,
+        prompt: 'Write a long story'
+      })
+
+      for await (const chunk of result.textStream) {
+        process.stdout.write(chunk)
+      }
+    } catch (error) {
+      console.error('\nStream cut:', error.message)
+    }
+    ```
+  </Tab>
+
+  <Tab title="Slow Tokens">
+    Simulate slow token generation:
+
+    ```typescript
+    const model = cruelModel(openai('gpt-4o'), {
+      slowTokens: [50, 200] // 50-200ms delay per token
+    })
+
+    const start = Date.now()
+    const result = streamText({ model, prompt: 'Count to 10' })
+
+    for await (const chunk of result.textStream) {
+      process.stdout.write(chunk)
+    }
+
+    console.log(`\nTook ${Date.now() - start}ms`)
+    ```
+  </Tab>
+
+  <Tab title="Corrupt Chunks">
+    Simulate corrupted stream data:
+
+    ```typescript
+    const model = cruelModel(openai('gpt-4o'), {
+      corruptChunks: 0.1 // 10% of chunks may be corrupted
+    })
+
+    const result = streamText({
+      model,
+      prompt: 'Write a poem'
+    })
+
+    let text = ''
+    for await (const chunk of result.textStream) {
+      text += chunk
+    }
+
+    // May contain \uFFFD replacement characters
+    console.log(text)
+    ```
+  </Tab>
+</Tabs>
+
+## Handling Full Stream Events
+
+Process all stream event types:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4o'), {
+  streamCut: 0.2,
+  slowTokens: [30, 100],
+  onChaos: (event) => {
+    console.log('Chaos event:', event.type)
+  }
+})
+
+const result = streamText({
+  model,
+  prompt: 'Write a haiku about testing'
+})
+
+for await (const part of result.fullStream) {
+  switch (part.type) {
+    case 'text-delta':
+      process.stdout.write(part.textDelta)
+      break
+    
+    case 'finish':
+      console.log('\n\nFinish reason:', part.finishReason)
+      console.log('Usage:', part.usage)
+      break
+    
+    case 'error':
+      console.error('\nError:', part.error)
+      break
+  }
+}
+```
+
+## Complete Example with Retries
+
+Robust streaming with retry logic:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+async function streamWithRetry(prompt: string, maxRetries = 3) {
+  const model = cruelModel(openai('gpt-4o'), {
+    streamCut: 0.3,
+    slowTokens: [20, 80],
+    rateLimit: 0.1,
+    overloaded: 0.05
+  })
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = streamText({ model, prompt })
+      let fullText = ''
+
+      for await (const chunk of result.textStream) {
+        fullText += chunk
+        process.stdout.write(chunk)
+      }
+
+      console.log('\n\nSuccess!')
+      return fullText
+    } catch (error) {
+      console.error(`\nAttempt ${attempt + 1} failed:`, error.message)
+      
+      if (attempt < maxRetries - 1) {
+        const delay = Math.pow(2, attempt) * 1000
+        console.log(`Retrying in ${delay}ms...`)
+        await new Promise(r => setTimeout(r, delay))
+      }
+    }
+  }
+
+  throw new Error('All retry attempts failed')
+}
+
+await streamWithRetry('Write a story about resilience')
+```
+
+## AI Provider Presets
+
+Realistic chaos presets for AI testing:
+
+<CodeGroup>
+```typescript realistic
+import { cruelModel, presets } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4o'), presets.realistic)
+// rateLimit: 0.02
+// overloaded: 0.01
+// delay: [50, 200]
+// slowTokens: [20, 80]
+```
+
+```typescript unstable
+const model = cruelModel(openai('gpt-4o'), presets.unstable)
+// rateLimit: 0.1
+// overloaded: 0.05
+// streamCut: 0.05
+// delay: [100, 500]
+// slowTokens: [50, 200]
+```
+
+```typescript harsh
+const model = cruelModel(openai('gpt-4o'), presets.harsh)
+// rateLimit: 0.2
+// overloaded: 0.1
+// streamCut: 0.1
+// contentFilter: 0.02
+// slowTokens: [100, 500]
+```
+
+```typescript nightmare
+const model = cruelModel(openai('gpt-4o'), presets.nightmare)
+// rateLimit: 0.3
+// overloaded: 0.15
+// streamCut: 0.15
+// partialResponse: 0.1
+// slowTokens: [200, 1000]
+```
+</CodeGroup>
+
+## Middleware Approach
+
+Use middleware for application-wide chaos:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  prompt: 'Explain quantum computing',
+  experimental_telemetry: {
+    isEnabled: true,
+    functionId: 'quantum-explain'
+  },
+  experimental_transform: cruelMiddleware({
+    streamCut: 0.1,
+    slowTokens: [30, 100],
+    rateLimit: 0.05
+  })
+})
+
+console.log(result.text)
+```
+
+## Provider-Level Chaos
+
+Apply chaos to all models from a provider:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelProvider } from 'cruel/ai-sdk'
+import { generateText } from 'ai'
+
+const chaosOpenAI = cruelProvider(openai, {
+  rateLimit: 0.1,
+  slowTokens: [30, 100],
+  models: {
+    'gpt-4o': {
+      streamCut: 0.15  // Extra chaos for GPT-4
+    },
+    'gpt-4o-mini': {
+      overloaded: 0.2  // More overload for mini
+    }
+  }
+})
+
+// All models from this provider have chaos
+const gpt4 = chaosOpenAI('gpt-4o')
+const mini = chaosOpenAI('gpt-4o-mini')
+
+const result1 = await generateText({ model: gpt4, prompt: 'Test 1' })
+const result2 = await generateText({ model: mini, prompt: 'Test 2' })
+```
+
+## Chaos Event Tracking
+
+Monitor chaos events during AI operations:
+
+```typescript
+import { cruelModel, diagnostics } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+
+const ctx = diagnostics.context()
+const track = diagnostics.tracker(ctx)
+
+const model = cruelModel(openai('gpt-4o'), {
+  rateLimit: 0.1,
+  streamCut: 0.1,
+  slowTokens: [50, 150],
+  onChaos: track
+})
+
+const requestId = 1
+diagnostics.before(ctx, requestId)
+
+const start = Date.now()
+try {
+  const result = streamText({ model, prompt: 'Write a haiku' })
+  let text = ''
+  
+  for await (const chunk of result.textStream) {
+    text += chunk
+  }
+  
+  diagnostics.success(ctx, requestId, Date.now() - start, text)
+} catch (error) {
+  diagnostics.failure(ctx, requestId, Date.now() - start, error)
+}
+
+const stats = diagnostics.stats(ctx)
+console.log('Stats:', {
+  total: stats.total,
+  succeeded: stats.succeeded,
+  successRate: (stats.successRate * 100).toFixed(1) + '%',
+  events: stats.events,
+  avgLatency: stats.latency.success.avg + 'ms'
+})
+```
+
+## Testing Streaming with Bun
+
+Comprehensive streaming tests:
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+describe('AI streaming resilience', () => {
+  test('handles stream cut gracefully', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      streamCut: 1 // Always cut
+    })
+
+    try {
+      const result = streamText({
+        model,
+        prompt: 'Count to 100'
+      })
+
+      for await (const _ of result.textStream) {
+        // Should throw before completion
+      }
+
+      expect(true).toBe(false) // Should not reach
+    } catch (error) {
+      expect(error.message).toContain('stream')
+    }
+  })
+
+  test('measures token generation speed', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      slowTokens: 100 // Fixed 100ms per token
+    })
+
+    const start = Date.now()
+    const result = streamText({
+      model,
+      prompt: 'Say "test" five times'
+    })
+
+    let chunks = 0
+    for await (const _ of result.textStream) {
+      chunks++
+    }
+
+    const elapsed = Date.now() - start
+    // Should take at least chunks * 100ms
+    expect(elapsed).toBeGreaterThanOrEqual((chunks - 1) * 90)
+  })
+
+  test('recovers from rate limits', async () => {
+    let attempts = 0
+
+    const attemptStream = async () => {
+      attempts++
+      const model = cruelModel(openai('gpt-4o'), {
+        rateLimit: 0.5
+      })
+
+      const result = streamText({
+        model,
+        prompt: 'Test'
+      })
+
+      let text = ''
+      for await (const chunk of result.textStream) {
+        text += chunk
+      }
+      return text
+    }
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        await attemptStream()
+        break
+      } catch (error) {
+        if (i === 2) throw error
+        await new Promise(r => setTimeout(r, 1000))
+      }
+    }
+
+    expect(attempts).toBeLessThanOrEqual(3)
+  })
+})
+```
+
+## Production Pattern
+
+Production-ready streaming with monitoring:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+import { cruelModel, diagnostics } from 'cruel/ai-sdk'
+
+class ResilientAIStream {
+  private ctx = diagnostics.context()
+  private requestId = 0
+
+  async stream(prompt: string, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const id = ++this.requestId
+      
+      const model = cruelModel(openai('gpt-4o'), {
+        ...( process.env.NODE_ENV === 'development' 
+          ? { streamCut: 0.1, slowTokens: [30, 100] }
+          : {}
+        ),
+        onChaos: diagnostics.tracker(this.ctx)
+      })
+
+      diagnostics.before(this.ctx, id)
+      const start = Date.now()
+
+      try {
+        const result = streamText({ model, prompt })
+        let fullText = ''
+
+        for await (const chunk of result.textStream) {
+          fullText += chunk
+          process.stdout.write(chunk)
+        }
+
+        diagnostics.success(this.ctx, id, Date.now() - start, fullText)
+        return fullText
+      } catch (error) {
+        diagnostics.failure(this.ctx, id, Date.now() - start, error)
+        
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000))
+        } else {
+          throw error
+        }
+      }
+    }
+  }
+
+  getStats() {
+    return diagnostics.stats(this.ctx)
+  }
+}
+
+const ai = new ResilientAIStream()
+await ai.stream('Explain chaos engineering')
+
+console.log('\nStats:', ai.getStats())
+```
+
+## Next Steps
+
+- Learn about [AI Provider Chaos](/examples/ai-provider-chaos)
+- Explore [AI Tool Failures](/examples/ai-tool-failures)
+- Master [Testing Integration](/examples/testing-integration)

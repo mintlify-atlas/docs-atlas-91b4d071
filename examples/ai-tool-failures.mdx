@@ -1,0 +1,459 @@
+---
+title: AI Tool Failures
+description: Test AI SDK tool calling with chaos and failures
+---
+
+# AI Tool Failures
+
+Test how your AI applications handle tool execution failures and timeouts.
+
+## Basic Tool Wrapping
+
+Add chaos to individual tools:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelTool } from 'cruel/ai-sdk'
+
+const weatherTool = cruelTool({
+  description: 'Get the weather for a location',
+  parameters: {
+    type: 'object',
+    properties: {
+      location: { type: 'string' }
+    }
+  },
+  execute: async ({ location }) => {
+    const response = await fetch(`https://api.weather.com/${location}`)
+    return response.json()
+  }
+}, {
+  toolFailure: 0.2 // 20% failure rate
+})
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  prompt: 'What is the weather in San Francisco?',
+  tools: { weather: weatherTool }
+})
+```
+
+## Tool Failure Types
+
+<Tabs>
+  <Tab title="Random Failure">
+    Simulate random tool failures:
+
+    ```typescript
+    import { cruelTool } from 'cruel/ai-sdk'
+
+    const searchTool = cruelTool({
+      description: 'Search the web',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' }
+        }
+      },
+      execute: async ({ query }) => {
+        return { results: [`Result for ${query}`] }
+      }
+    }, {
+      toolFailure: 0.3 // 30% chance of failure
+    })
+
+    // Will throw "Tool execution failed" 30% of the time
+    ```
+  </Tab>
+
+  <Tab title="Timeout">
+    Simulate tool timeouts:
+
+    ```typescript
+    const databaseTool = cruelTool({
+      description: 'Query database',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' }
+        }
+      },
+      execute: async ({ query }) => {
+        const result = await db.query(query)
+        return result
+      }
+    }, {
+      toolTimeout: 0.15 // 15% timeout rate
+    })
+
+    // Tool may never resolve (15% of the time)
+    ```
+  </Tab>
+
+  <Tab title="Delay">
+    Add latency to tool execution:
+
+    ```typescript
+    const apiTool = cruelTool({
+      description: 'Call external API',
+      execute: async () => {
+        return { data: 'result' }
+      }
+    }, {
+      delay: [100, 500] // 100-500ms delay
+    })
+
+    // Tool execution is delayed
+    ```
+  </Tab>
+</Tabs>
+
+## Wrapping Multiple Tools
+
+Apply chaos to all tools at once:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelTools } from 'cruel/ai-sdk'
+
+const tools = cruelTools({
+  weather: {
+    description: 'Get weather',
+    parameters: { type: 'object', properties: {} },
+    execute: async () => ({ temp: 72, condition: 'sunny' })
+  },
+  search: {
+    description: 'Search web',
+    parameters: { type: 'object', properties: {} },
+    execute: async () => ({ results: [] })
+  },
+  calculate: {
+    description: 'Do math',
+    parameters: { type: 'object', properties: {} },
+    execute: async () => ({ result: 42 })
+  }
+}, {
+  toolFailure: 0.2,
+  delay: [50, 200]
+})
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  prompt: 'Get the weather, search for news, and calculate 2+2',
+  tools
+})
+```
+
+## Handling Tool Failures
+
+Gracefully handle tool execution errors:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelTool } from 'cruel/ai-sdk'
+
+const unreliableTool = cruelTool({
+  description: 'Unreliable operation',
+  parameters: { type: 'object', properties: {} },
+  execute: async () => {
+    return { status: 'ok' }
+  }
+}, {
+  toolFailure: 0.5
+})
+
+try {
+  const result = await generateText({
+    model: openai('gpt-4o'),
+    prompt: 'Use the unreliable tool',
+    tools: { unreliable: unreliableTool },
+    maxToolRoundtrips: 3 // Allow retries
+  })
+
+  console.log('Result:', result.text)
+} catch (error) {
+  console.error('Tool execution failed after retries:', error.message)
+}
+```
+
+## Tool Retry Pattern
+
+Implement retry logic for tools:
+
+```typescript
+import { cruelTool } from 'cruel/ai-sdk'
+
+function createResilientTool(tool: any, maxRetries = 3) {
+  return {
+    ...tool,
+    execute: async (params: any) => {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await tool.execute(params)
+        } catch (error) {
+          if (attempt === maxRetries - 1) throw error
+          
+          const delay = Math.pow(2, attempt) * 100
+          await new Promise(r => setTimeout(r, delay))
+        }
+      }
+    }
+  }
+}
+
+const baseTool = cruelTool({
+  description: 'Flaky operation',
+  execute: async () => ({ result: 'ok' })
+}, {
+  toolFailure: 0.3
+})
+
+const resilientTool = createResilientTool(baseTool)
+```
+
+## Testing Tool Integration
+
+Comprehensive tool testing:
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelTool, cruelTools } from 'cruel/ai-sdk'
+
+describe('AI tool resilience', () => {
+  test('handles tool failure', async () => {
+    const failingTool = cruelTool({
+      description: 'Test tool',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => ({ result: 'ok' })
+    }, {
+      toolFailure: 1 // Always fail
+    })
+
+    try {
+      await generateText({
+        model: openai('gpt-4o'),
+        prompt: 'Use the test tool',
+        tools: { test: failingTool }
+      })
+    } catch (error) {
+      expect(error.message).toContain('Tool execution failed')
+    }
+  })
+
+  test('measures tool latency', async () => {
+    const slowTool = cruelTool({
+      description: 'Slow tool',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => ({ result: 'ok' })
+    }, {
+      delay: 500
+    })
+
+    const start = Date.now()
+    
+    await generateText({
+      model: openai('gpt-4o'),
+      prompt: 'Use the slow tool',
+      tools: { slow: slowTool }
+    })
+
+    const elapsed = Date.now() - start
+    expect(elapsed).toBeGreaterThanOrEqual(500)
+  })
+
+  test('retries failed tools', async () => {
+    let attempts = 0
+
+    const retryTool = {
+      description: 'Retry tool',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => {
+        attempts++
+        if (attempts < 3) throw new Error('Fail')
+        return { result: 'ok' }
+      }
+    }
+
+    const wrapped = cruelTool(retryTool, { delay: 10 })
+
+    const resilient = {
+      ...wrapped,
+      execute: async (params: any) => {
+        for (let i = 0; i < 3; i++) {
+          try {
+            return await wrapped.execute(params)
+          } catch (error) {
+            if (i === 2) throw error
+          }
+        }
+      }
+    }
+
+    await generateText({
+      model: openai('gpt-4o'),
+      prompt: 'Use the retry tool',
+      tools: { retry: resilient }
+    })
+
+    expect(attempts).toBe(3)
+  })
+
+  test('handles timeout', async () => {
+    const timeoutTool = cruelTool({
+      description: 'Timeout tool',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => ({ result: 'ok' })
+    }, {
+      toolTimeout: 1
+    })
+
+    const withTimeout = {
+      ...timeoutTool,
+      execute: async (params: any) => {
+        return Promise.race([
+          timeoutTool.execute(params),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 1000)
+          )
+        ])
+      }
+    }
+
+    try {
+      await generateText({
+        model: openai('gpt-4o'),
+        prompt: 'Use timeout tool',
+        tools: { timeout: withTimeout }
+      })
+    } catch (error) {
+      expect(error.message).toContain('Timeout')
+    }
+  })
+})
+```
+
+## Chaos Event Tracking for Tools
+
+Monitor tool chaos events:
+
+```typescript
+import { cruelTools } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+
+const events: string[] = []
+
+const tools = cruelTools({
+  weather: {
+    description: 'Get weather',
+    execute: async () => ({ temp: 72 })
+  },
+  search: {
+    description: 'Search',
+    execute: async () => ({ results: [] })
+  }
+}, {
+  toolFailure: 0.2,
+  onChaos: (event) => {
+    events.push(event.type)
+    console.log('Tool chaos:', event.type)
+  }
+})
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  prompt: 'Get weather and search for news',
+  tools
+})
+
+console.log('Chaos events:', events)
+// ['toolFailure', 'toolFailure', ...]
+```
+
+## Production Tool Wrapper
+
+Production-ready tool wrapper with monitoring:
+
+```typescript
+import { cruelTool } from 'cruel/ai-sdk'
+
+class ResilientToolExecutor {
+  private stats = {
+    calls: 0,
+    failures: 0,
+    timeouts: 0,
+    totalLatency: 0
+  }
+
+  wrap(tool: any, options = {}) {
+    const wrapped = cruelTool(tool, {
+      // Only chaos in development
+      ...( process.env.NODE_ENV === 'development' && {
+        toolFailure: 0.1,
+        delay: [50, 200]
+      }),
+      onChaos: (event) => {
+        if (event.type === 'toolFailure') this.stats.failures++
+        if (event.type === 'toolTimeout') this.stats.timeouts++
+      }
+    })
+
+    return {
+      ...wrapped,
+      execute: async (params: any) => {
+        this.stats.calls++
+        const start = Date.now()
+
+        try {
+          const result = await wrapped.execute(params)
+          this.stats.totalLatency += Date.now() - start
+          return result
+        } catch (error) {
+          this.stats.failures++
+          throw error
+        }
+      }
+    }
+  }
+
+  getStats() {
+    return {
+      ...this.stats,
+      avgLatency: this.stats.calls > 0 
+        ? Math.round(this.stats.totalLatency / this.stats.calls)
+        : 0,
+      successRate: this.stats.calls > 0
+        ? ((this.stats.calls - this.stats.failures) / this.stats.calls * 100).toFixed(1) + '%'
+        : '0%'
+    }
+  }
+}
+
+const executor = new ResilientToolExecutor()
+
+const tools = {
+  weather: executor.wrap({
+    description: 'Get weather',
+    execute: async () => ({ temp: 72 })
+  }),
+  search: executor.wrap({
+    description: 'Search',
+    execute: async () => ({ results: [] })
+  })
+}
+
+// Use tools...
+
+console.log('Tool stats:', executor.getStats())
+```
+
+## Next Steps
+
+- Learn about [Combining Patterns](/examples/combining-patterns)
+- Explore [Testing Integration](/examples/testing-integration)
+- Master [Production Readiness](/examples/production-readiness)

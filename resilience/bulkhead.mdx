@@ -1,0 +1,396 @@
+---
+title: Bulkhead
+description: Isolate resources and limit concurrent operations to prevent resource exhaustion
+---
+
+## Overview
+
+The Bulkhead pattern limits the number of concurrent operations, isolating resources to prevent cascading failures. Like bulkheads in a ship that contain flooding to one section, this pattern prevents one overloaded resource from bringing down your entire system.
+
+## When to Use
+
+- Limiting concurrent database connections
+- Preventing thread pool exhaustion
+- Controlling concurrent API calls
+- Protecting against resource exhaustion
+- Implementing concurrency limits per user or tenant
+
+## How It Works
+
+<Steps>
+  <Step title="Track Concurrency">
+    The bulkhead tracks the number of currently executing operations.
+  </Step>
+  <Step title="Allow or Queue">
+    If below the limit, the operation executes immediately. Otherwise, it's queued.
+  </Step>
+  <Step title="Process Queue">
+    When an operation completes, the next queued operation starts.
+  </Step>
+  <Step title="Reject if Full">
+    If the queue is full, new operations are rejected immediately.
+  </Step>
+</Steps>
+
+## API Reference
+
+### Function Signature
+
+```typescript
+function createBulkhead<T extends AnyFn>(fn: T, options: BulkheadOptions): T
+```
+
+### Options
+
+<ParamField path="maxConcurrent" type="number" required>
+  Maximum number of concurrent operations allowed.
+</ParamField>
+
+<ParamField path="maxQueue" type="number">
+  Maximum number of operations to queue when at capacity. If not specified, the queue is unlimited. When the queue is full, new operations are rejected with `CRUEL_BULKHEAD_FULL`.
+</ParamField>
+
+<ParamField path="onReject" type="() => void">
+  Callback function executed when an operation is rejected due to a full queue.
+</ParamField>
+
+## Examples
+
+### Basic Bulkhead
+
+```typescript
+import { createBulkhead } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  const response = await fetch(`https://api.example.com/users/${id}`)
+  return response.json()
+}
+
+// Limit to 5 concurrent requests
+const rateLimitedFetch = createBulkhead(fetchUser, {
+  maxConcurrent: 5,
+})
+
+// These will run concurrently up to the limit
+const users = await Promise.all([
+  rateLimitedFetch('1'),
+  rateLimitedFetch('2'),
+  rateLimitedFetch('3'),
+  rateLimitedFetch('4'),
+  rateLimitedFetch('5'),
+  rateLimitedFetch('6'),  // This waits for one of the above to complete
+])
+```
+
+### With Queue Limit
+
+```typescript
+const limitedAPI = createBulkhead(apiCall, {
+  maxConcurrent: 10,
+  maxQueue: 50,
+  onReject: () => {
+    console.warn('API bulkhead queue is full')
+    metrics.increment('bulkhead.rejected')
+  },
+})
+
+try {
+  await limitedAPI(data)
+} catch (error) {
+  if (error.code === 'CRUEL_BULKHEAD_FULL') {
+    // Queue is full, handle gracefully
+    return fallbackResponse
+  }
+  throw error
+}
+```
+
+### Database Connection Pool
+
+```typescript
+const executeQuery = async (sql: string) => {
+  const connection = await pool.getConnection()
+  try {
+    return await connection.query(sql)
+  } finally {
+    connection.release()
+  }
+}
+
+// Match database connection pool size
+const limitedQuery = createBulkhead(executeQuery, {
+  maxConcurrent: 20,  // Match pool size
+  maxQueue: 100,      // Reasonable queue size
+  onReject: () => {
+    console.error('Database connection pool exhausted')
+  },
+})
+```
+
+### Per-User Rate Limiting
+
+```typescript
+const bulkheads = new Map<string, ReturnType<typeof createBulkhead>>()
+
+function getUserBulkhead(userId: string) {
+  if (!bulkheads.has(userId)) {
+    bulkheads.set(userId, createBulkhead(processUserRequest, {
+      maxConcurrent: 3,  // 3 concurrent requests per user
+      maxQueue: 10,
+    }))
+  }
+  return bulkheads.get(userId)!
+}
+
+// Usage
+const userBulkhead = getUserBulkhead(userId)
+await userBulkhead(requestData)
+```
+
+### API Client with Concurrency Control
+
+```typescript
+class APIClient {
+  private bulkhead: ReturnType<typeof createBulkhead>
+
+  constructor() {
+    this.bulkhead = createBulkhead(
+      this.makeRequest.bind(this),
+      {
+        maxConcurrent: 10,
+        maxQueue: 100,
+        onReject: () => {
+          throw new Error('Too many concurrent API requests')
+        },
+      }
+    )
+  }
+
+  private async makeRequest(endpoint: string, data: any) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    return response.json()
+  }
+
+  async request(endpoint: string, data: any) {
+    return this.bulkhead(endpoint, data)
+  }
+}
+
+const client = new APIClient()
+```
+
+### Multi-Tenant Isolation
+
+```typescript
+interface TenantBulkhead {
+  process: ReturnType<typeof createBulkhead>
+  currentLoad: number
+}
+
+const tenantBulkheads = new Map<string, TenantBulkhead>()
+
+function getTenantBulkhead(tenantId: string) {
+  if (!tenantBulkheads.has(tenantId)) {
+    const bulkhead = createBulkhead(processTenantRequest, {
+      maxConcurrent: 5,
+      maxQueue: 20,
+    })
+    
+    tenantBulkheads.set(tenantId, {
+      process: bulkhead,
+      currentLoad: 0,
+    })
+  }
+  return tenantBulkheads.get(tenantId)!
+}
+
+async function handleTenantRequest(tenantId: string, request: any) {
+  const tenant = getTenantBulkhead(tenantId)
+  tenant.currentLoad++
+  
+  try {
+    return await tenant.process(request)
+  } finally {
+    tenant.currentLoad--
+  }
+}
+```
+
+## Combining with Other Patterns
+
+### Bulkhead + Timeout
+
+```typescript
+import { createBulkhead, withTimeout } from 'cruel'
+
+// Apply timeout to prevent operations from holding bulkhead slots indefinitely
+const resilientAPI = createBulkhead(
+  withTimeout(apiCall, { ms: 5000 }),
+  {
+    maxConcurrent: 10,
+    maxQueue: 50,
+  }
+)
+```
+
+### Bulkhead + Circuit Breaker
+
+```typescript
+import { createBulkhead, createCircuitBreaker } from 'cruel'
+
+// Limit concurrency and fail fast when service is down
+const resilientAPI = createBulkhead(
+  createCircuitBreaker(apiCall, {
+    threshold: 5,
+    timeout: 30000,
+  }),
+  {
+    maxConcurrent: 20,
+    maxQueue: 100,
+  }
+)
+```
+
+### Bulkhead + Retry
+
+```typescript
+import { createBulkhead, withRetry } from 'cruel'
+
+// Retry failed operations while controlling concurrency
+const resilientAPI = createBulkhead(
+  withRetry(apiCall, {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+  }),
+  {
+    maxConcurrent: 10,
+  }
+)
+```
+
+### With Compose
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientAPI = cruel.compose(apiCall, {
+  bulkhead: {
+    maxConcurrent: 10,
+    maxQueue: 50,
+    onReject: () => console.warn('Bulkhead full'),
+  },
+  retry: {
+    attempts: 3,
+    backoff: 'exponential',
+  },
+  timeoutMs: 5000,
+})
+```
+
+## Advanced Examples
+
+### Adaptive Bulkhead
+
+```typescript
+class AdaptiveBulkhead {
+  private currentLimit: number
+  private readonly minLimit = 5
+  private readonly maxLimit = 50
+  private errorRate = 0
+
+  constructor() {
+    this.currentLimit = 20
+  }
+
+  createBulkhead<T extends AnyFn>(fn: T) {
+    return createBulkhead(fn, {
+      maxConcurrent: this.currentLimit,
+      maxQueue: this.currentLimit * 5,
+    })
+  }
+
+  adjustLimit(success: boolean) {
+    if (success) {
+      this.errorRate *= 0.95
+      if (this.errorRate < 0.01 && this.currentLimit < this.maxLimit) {
+        this.currentLimit = Math.min(this.maxLimit, this.currentLimit + 1)
+      }
+    } else {
+      this.errorRate = Math.min(1, this.errorRate + 0.1)
+      if (this.errorRate > 0.1 && this.currentLimit > this.minLimit) {
+        this.currentLimit = Math.max(this.minLimit, this.currentLimit - 2)
+      }
+    }
+  }
+}
+```
+
+### Bulkhead with Priority Queue
+
+```typescript
+import PQueue from 'p-queue'
+
+function createPriorityBulkhead<T extends AnyFn>(
+  fn: T,
+  maxConcurrent: number
+) {
+  const queue = new PQueue({ concurrency: maxConcurrent })
+
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    return queue.add(
+      () => fn(...args) as Promise<ReturnType<T>>,
+      { priority: args[0]?.priority || 0 }
+    )
+  }
+}
+
+const priorityAPI = createPriorityBulkhead(apiCall, 10)
+
+// High priority request
+await priorityAPI({ priority: 10, data: 'critical' })
+
+// Normal priority
+await priorityAPI({ priority: 0, data: 'normal' })
+```
+
+## Error Handling
+
+The bulkhead throws `CruelError` with code `CRUEL_BULKHEAD_FULL` when the queue is full:
+
+```typescript
+import { CruelError } from 'cruel'
+
+try {
+  await limitedAPI(data)
+} catch (error) {
+  if (error instanceof CruelError && error.code === 'CRUEL_BULKHEAD_FULL') {
+    // Queue is full - apply backpressure
+    await waitAndRetry()
+  }
+  throw error
+}
+```
+
+## Best Practices
+
+- **Match resource limits**: Set `maxConcurrent` to match actual resource limits (e.g., database connection pool size)
+- **Set reasonable queue sizes**: Too small and you reject too many requests, too large and you accumulate latency
+- **Use with timeouts**: Prevent operations from holding bulkhead slots indefinitely
+- **Monitor queue depth**: Track how often the queue fills up
+- **Implement backpressure**: When rejected, signal upstream to slow down
+- **Consider per-tenant bulkheads**: Isolate tenants in multi-tenant systems
+- **Combine with circuit breakers**: Fail fast when downstream services are down
+
+## Configuration Guidelines
+
+| Resource Type | Max Concurrent | Queue Size | Reasoning |
+|---------------|----------------|------------|------------|
+| Database connections | Pool size | 5-10x concurrent | Match connection pool |
+| External API | 10-20 | 50-100 | Respect rate limits |
+| CPU-intensive tasks | CPU cores | 2x cores | Prevent overload |
+| Memory-intensive tasks | Based on RAM | Small | Prevent OOM |
+| Per-user limits | 3-5 | 10-20 | Fairness |

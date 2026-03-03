@@ -1,0 +1,81 @@
+---
+title: Circuit Breaker
+description: Wrap functions with circuit breaker pattern to prevent cascading failures
+---
+
+## Function Signature
+
+```typescript
+function createCircuitBreaker<T extends AnyFn>(
+  fn: T,
+  options: CircuitBreakerOptions
+): T & { getState: () => CircuitBreakerState; reset: () => void }
+```
+
+Wraps a function with circuit breaker pattern. The circuit breaker monitors failures and opens the circuit after reaching a threshold, preventing further calls until the timeout expires.
+
+## Options
+
+<ParamField path="threshold" type="number" required>
+  Number of consecutive failures before opening the circuit. Must be at least 1.
+</ParamField>
+
+<ParamField path="timeout" type="number" required>
+  Time in milliseconds to wait before attempting to close the circuit. Must be at least 1.
+</ParamField>
+
+<ParamField path="onOpen" type="() => void">
+  Callback invoked when the circuit opens.
+</ParamField>
+
+<ParamField path="onClose" type="() => void">
+  Callback invoked when the circuit closes.
+</ParamField>
+
+<ParamField path="onHalfOpen" type="() => void">
+  Callback invoked when the circuit enters half-open state.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function with additional methods:
+
+- `getState(): CircuitBreakerState` - Returns current state of the circuit breaker
+- `reset(): void` - Resets the circuit breaker to closed state
+
+## Types
+
+```typescript
+interface CircuitBreakerState {
+  failures: number
+  state: "closed" | "open" | "half-open"
+  lastFailure: number
+}
+```
+
+## Example
+
+```typescript
+import { createCircuitBreaker } from 'cruel'
+
+const protectedFn = createCircuitBreaker(
+  async () => {
+    const response = await fetch('https://api.example.com/data')
+    return response.json()
+  },
+  {
+    threshold: 5,
+    timeout: 30000,
+    onOpen: () => console.log('Circuit opened'),
+    onClose: () => console.log('Circuit closed'),
+    onHalfOpen: () => console.log('Circuit half-open')
+  }
+)
+
+// Check circuit state
+const state = protectedFn.getState()
+console.log(state.state) // "closed" | "open" | "half-open"
+
+// Reset circuit breaker
+protectedFn.reset()
+```

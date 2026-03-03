@@ -1,0 +1,403 @@
+---
+title: "AI Chaos API"
+description: "AI-specific chaos testing methods for simulating LLM and AI service failures"
+---
+
+## cruel.ai.rateLimit()
+
+Simulates AI API rate limiting.
+
+```typescript
+function rateLimit<T extends AnyFn>(
+  fn: T,
+  opts: number | { rate: number; retryAfter?: number } = 0.1
+): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="opts" type="number | object" default="0.1">
+  Rate limit configuration. Can be a number (rate) or object with options
+  
+  <Expandable title="object properties">
+    <ParamField path="rate" type="number" required>
+      Rate at which to trigger rate limit (0-1)
+    </ParamField>
+    <ParamField path="retryAfter" type="number" default="60">
+      Retry-After value in seconds. Default is 60
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelAIError("rate_limit")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const limitedAI = cruel.ai.rateLimit(async (prompt: string) => {
+  return openai.chat(prompt)
+}, { rate: 0.1, retryAfter: 120 }) // 10% rate limited, retry after 120s
+```
+
+---
+
+## cruel.ai.overloaded()
+
+Simulates AI model overload errors.
+
+```typescript
+function overloaded<T extends AnyFn>(fn: T, rate = 0.05): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.05">
+  Overload error rate (0-1). Default is 0.05 (5%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelAIError("overloaded", "model is overloaded")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const busyModel = cruel.ai.overloaded(async (prompt: string) => {
+  return anthropic.complete(prompt)
+}, 0.1) // 10% overloaded
+```
+
+---
+
+## cruel.ai.contextLength()
+
+Simulates context length exceeded errors.
+
+```typescript
+function contextLength<T extends AnyFn>(fn: T, rate = 0.02): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.02">
+  Context length error rate (0-1). Default is 0.02 (2%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelAIError("context_length", "context length exceeded")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const longContext = cruel.ai.contextLength(async (messages: Message[]) => {
+  return llm.chat(messages)
+})
+```
+
+---
+
+## cruel.ai.contentFilter()
+
+Simulates content filter/moderation triggers.
+
+```typescript
+function contentFilter<T extends AnyFn>(fn: T, rate = 0.01): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.01">
+  Content filter trigger rate (0-1). Default is 0.01 (1%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelAIError("content_filter", "content filter triggered")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const moderated = cruel.ai.contentFilter(async (input: string) => {
+  return ai.generate(input)
+}, 0.02)
+```
+
+---
+
+## cruel.ai.modelUnavailable()
+
+Simulates model unavailability errors.
+
+```typescript
+function modelUnavailable<T extends AnyFn>(fn: T, rate = 0.02): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.02">
+  Model unavailable rate (0-1). Default is 0.02 (2%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelAIError("model_unavailable", "model not available")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const unreliableModel = cruel.ai.modelUnavailable(async () => {
+  return ai.complete({ model: 'gpt-4' })
+})
+```
+
+---
+
+## cruel.ai.slowTokens()
+
+Simulates slow token generation.
+
+```typescript
+function slowTokens<T extends AnyFn>(fn: T, ms: number | [number, number] = [50, 200]): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="ms" type="number | [number, number]" default="[50, 200]">
+  Delay per token in milliseconds, or range [min, max]. Default is 50-200ms
+</ParamField>
+
+**Returns:** `T` - Function with token generation delay
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowGeneration = cruel.ai.slowTokens(async (prompt: string) => {
+  return llm.stream(prompt)
+}, [100, 500]) // 100-500ms per token
+```
+
+---
+
+## cruel.ai.streamCut()
+
+Cuts AI streaming responses mid-generation.
+
+```typescript
+function streamCut<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Stream cut rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelAIError("stream_cut", "stream terminated unexpectedly")` after execution
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const interruptedStream = cruel.ai.streamCut(async () => {
+  return ai.streamCompletion()
+}, 0.15) // 15% stream cuts
+```
+
+---
+
+## cruel.ai.partialResponse()
+
+Returns partial/incomplete AI responses.
+
+```typescript
+function partialResponse<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Partial response rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that may return truncated response (cuts at 10-70% of length)
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const incomplete = cruel.ai.partialResponse(async (prompt: string) => {
+  return await llm.complete(prompt)
+}, 0.2)
+```
+
+---
+
+## cruel.ai.invalidJson()
+
+Corrupts JSON responses from AI models.
+
+```typescript
+function invalidJson<T extends AsyncFn<string>>(fn: T, rate = 0.05): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.05">
+  Invalid JSON rate (0-1). Default is 0.05 (5%)
+</ParamField>
+
+**Returns:** `T` - Function that may append invalid JSON (`\n{invalid`) to the response
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const brokenJson = cruel.ai.invalidJson(async () => {
+  return ai.generateJson(schema)
+}, 0.1)
+```
+
+---
+
+## cruel.ai.hallucinate()
+
+Adds slight delay to simulate hallucination/generation time.
+
+```typescript
+function hallucinate<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with hallucination-like delay
+
+**Behavior:** Applies delay of [100, 500]ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const creative = cruel.ai.hallucinate(async (prompt: string) => {
+  return llm.generate(prompt)
+})
+```
+
+---
+
+## cruel.ai.thinking()
+
+Adds long delay to simulate extended thinking time.
+
+```typescript
+function thinking<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with extended thinking delay
+
+**Behavior:** Applies delay of [2000, 10000]ms (2-10 seconds)
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const deepThinking = cruel.ai.thinking(async (complexProblem: string) => {
+  return reasoningModel.solve(complexProblem)
+})
+```
+
+---
+
+## cruel.ai.realistic()
+
+Combines realistic AI failures for production-like testing.
+
+```typescript
+function realistic<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with realistic AI behavior
+
+**Behavior:**
+- 5% rate limiting
+- 2% overloaded
+- Slow tokens [30, 100]ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const productionAI = cruel.ai.realistic(async (input: string) => {
+  return ai.process(input)
+})
+```
+
+---
+
+## cruel.ai.nightmare()
+
+Extreme AI chaos for stress testing.
+
+```typescript
+function nightmare<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with extreme AI chaos
+
+**Behavior:**
+- 20% rate limiting
+- 10% overloaded
+- 15% stream cuts
+- Slow tokens [100, 500]ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const worstCaseAI = cruel.ai.nightmare(async () => {
+  return llm.generate()
+})
+```

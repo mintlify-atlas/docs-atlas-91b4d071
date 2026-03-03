@@ -1,0 +1,178 @@
+---
+title: Utility Functions
+description: Utility functions for randomness and chaos control
+---
+
+Cruel provides several utility functions for working with randomness and introducing controlled chaos into your code.
+
+## cruel.coin()
+
+Returns a random boolean value based on a probability rate.
+
+```typescript
+cruel.coin(rate?: number): boolean
+```
+
+<ParamField path="rate" type="number" default="0.5">
+  Probability of returning `true` (0 to 1)
+</ParamField>
+
+**Example:**
+
+```typescript
+import { cruel } from 'cruel'
+
+// 50% chance of true
+if (cruel.coin()) {
+  console.log('Heads!')
+}
+
+// 30% chance of true
+if (cruel.coin(0.3)) {
+  console.log('Unlikely event occurred')
+}
+```
+
+## cruel.pick()
+
+Randomly selects an item from an array.
+
+```typescript
+cruel.pick<T>(array: T[]): T
+```
+
+<ParamField path="array" type="T[]" required>
+  Array to pick from
+</ParamField>
+
+**Example:**
+
+```typescript
+import { cruel } from 'cruel'
+
+const colors = ['red', 'blue', 'green', 'yellow']
+const randomColor = cruel.pick(colors)
+
+const statuses = [500, 502, 503, 504]
+const errorStatus = cruel.pick(statuses)
+```
+
+## cruel.between()
+
+Generates a random integer between min and max (inclusive).
+
+```typescript
+cruel.between(min: number, max: number): number
+```
+
+<ParamField path="min" type="number" required>
+  Minimum value (inclusive)
+</ParamField>
+
+<ParamField path="max" type="number" required>
+  Maximum value (inclusive)
+</ParamField>
+
+**Example:**
+
+```typescript
+import { cruel } from 'cruel'
+
+// Random number between 1 and 100
+const randomScore = cruel.between(1, 100)
+
+// Random delay between 100ms and 500ms
+const delay = cruel.between(100, 500)
+```
+
+## cruel.maybe()
+
+Returns a value with a given probability, or `undefined` otherwise.
+
+```typescript
+cruel.maybe<T>(value: T, rate?: number): T | undefined
+```
+
+<ParamField path="value" type="T" required>
+  Value to potentially return
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.5">
+  Probability of returning the value (0 to 1)
+</ParamField>
+
+**Example:**
+
+```typescript
+import { cruel } from 'cruel'
+
+// 50% chance of getting a user ID
+const userId = cruel.maybe('user-123')
+
+// 20% chance of getting an error message
+const error = cruel.maybe('Connection timeout', 0.2)
+
+if (error) {
+  throw new Error(error)
+}
+```
+
+## cruel.delay()
+
+Returns a promise that resolves after a delay. Accepts either a fixed duration or a range.
+
+```typescript
+cruel.delay(ms: number | [number, number]): Promise<void>
+```
+
+<ParamField path="ms" type="number | [number, number]" required>
+  Delay in milliseconds, or a range `[min, max]` for random delay
+</ParamField>
+
+**Example:**
+
+```typescript
+import { cruel } from 'cruel'
+
+// Fixed 1 second delay
+await cruel.delay(1000)
+
+// Random delay between 500ms and 2000ms
+await cruel.delay([500, 2000])
+
+// Use in async functions
+async function fetchWithDelay() {
+  await cruel.delay([100, 500])
+  return fetch('/api/data')
+}
+```
+
+## cruel.seed()
+
+Sets a seed for deterministic random number generation. Useful for reproducible tests.
+
+```typescript
+cruel.seed(seed: number): void
+```
+
+<ParamField path="seed" type="number" required>
+  Seed value for the random number generator
+</ParamField>
+
+**Example:**
+
+```typescript
+import { cruel } from 'cruel'
+
+// Set seed for reproducible results
+cruel.seed(12345)
+
+// These will now produce the same sequence every time
+const a = cruel.coin()
+const b = cruel.between(1, 100)
+const c = cruel.pick(['a', 'b', 'c'])
+```
+
+<Note>
+After setting a seed, all random operations will be deterministic. Call `cruel.reset()` to restore normal random behavior.
+</Note>

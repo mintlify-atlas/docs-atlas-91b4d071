@@ -1,0 +1,503 @@
+---
+title: Rate Limiter
+description: Control the rate of operations using token bucket algorithm
+---
+
+## Overview
+
+The Rate Limiter pattern controls the rate at which operations can be executed using a token bucket algorithm. Each operation consumes a token, and tokens are refilled at a fixed rate. This prevents overwhelming downstream services or exceeding API rate limits.
+
+## When to Use
+
+- Limiting API calls to respect rate limits
+- Controlling resource consumption
+- Preventing abuse or excessive usage
+- Implementing fair usage policies
+- Protecting downstream services from overload
+
+## How It Works
+
+<Steps>
+  <Step title="Initialize Tokens">
+    Start with a bucket of tokens (equal to `requests`).
+  </Step>
+  <Step title="Consume Token">
+    Each operation consumes one token from the bucket.
+  </Step>
+  <Step title="Refill Tokens">
+    Tokens are refilled at a rate of `requests` per `interval`.
+  </Step>
+  <Step title="Reject When Empty">
+    When the bucket is empty, operations are rejected with `CruelRateLimitError`.
+  </Step>
+</Steps>
+
+## API Reference
+
+### Function Signature
+
+```typescript
+function createRateLimiter<T extends AnyFn>(fn: T, options: RateLimiterOptions): T
+```
+
+### Options
+
+<ParamField path="requests" type="number" required>
+  Number of requests allowed per interval (bucket size).
+</ParamField>
+
+<ParamField path="interval" type="number" required>
+  Time interval in milliseconds for token refill.
+</ParamField>
+
+<ParamField path="onLimit" type="() => void">
+  Callback function executed when a request is rate limited.
+</ParamField>
+
+## Examples
+
+### Basic Rate Limiting
+
+```typescript
+import { createRateLimiter } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  const response = await fetch(`https://api.example.com/users/${id}`)
+  return response.json()
+}
+
+// Allow 10 requests per second
+const limitedFetch = createRateLimiter(fetchUser, {
+  requests: 10,
+  interval: 1000,
+})
+
+try {
+  const user = await limitedFetch('123')
+} catch (error) {
+  if (error instanceof CruelRateLimitError) {
+    console.log(`Rate limited, retry after ${error.retryAfter}s`)
+  }
+}
+```
+
+### API Client with Rate Limiting
+
+```typescript
+import { createRateLimiter, CruelRateLimitError } from 'cruel'
+
+class APIClient {
+  private apiCall: ReturnType<typeof createRateLimiter>
+
+  constructor(
+    private apiKey: string,
+    requestsPerMinute: number = 60
+  ) {
+    this.apiCall = createRateLimiter(
+      this.makeRequest.bind(this),
+      {
+        requests: requestsPerMinute,
+        interval: 60000,  // 1 minute
+        onLimit: () => {
+          console.warn('API rate limit reached')
+          metrics.increment('api.rate_limited')
+        },
+      }
+    )
+  }
+
+  private async makeRequest(endpoint: string) {
+    const response = await fetch(endpoint, {
+      headers: { 'Authorization': `Bearer ${this.apiKey}` },
+    })
+    return response.json()
+  }
+
+  async get(endpoint: string) {
+    return this.apiCall(endpoint)
+  }
+}
+
+const client = new APIClient('api-key', 100)
+```
+
+### Different Rate Limits per Tier
+
+```typescript
+const rateLimitsByTier = {
+  free: { requests: 10, interval: 60000 },    // 10/min
+  basic: { requests: 100, interval: 60000 },  // 100/min
+  premium: { requests: 1000, interval: 60000 }, // 1000/min
+}
+
+function createAPIClient(tier: keyof typeof rateLimitsByTier) {
+  const limits = rateLimitsByTier[tier]
+  
+  return createRateLimiter(
+    makeAPIRequest,
+    {
+      ...limits,
+      onLimit: () => {
+        console.log(`Rate limit reached for ${tier} tier`)
+      },
+    }
+  )
+}
+
+const freeAPI = createAPIClient('free')
+const premiumAPI = createAPIClient('premium')
+```
+
+### Per-User Rate Limiting
+
+```typescript
+const userRateLimiters = new Map<string, ReturnType<typeof createRateLimiter>>()
+
+function getUserRateLimiter(userId: string) {
+  if (!userRateLimiters.has(userId)) {
+    userRateLimiters.set(userId, createRateLimiter(
+      processUserRequest,
+      {
+        requests: 100,   // 100 requests
+        interval: 60000, // per minute
+        onLimit: () => {
+          console.log(`User ${userId} rate limited`)
+        },
+      }
+    ))
+  }
+  return userRateLimiters.get(userId)!
+}
+
+async function handleRequest(userId: string, data: any) {
+  const limiter = getUserRateLimiter(userId)
+  return limiter(data)
+}
+```
+
+### Burst Handling
+
+```typescript
+// Allow bursts of up to 100 requests, but sustain only 10/second
+const burstAPI = createRateLimiter(apiCall, {
+  requests: 100,   // Bucket size (burst capacity)
+  interval: 10000, // Refill rate: 100 tokens per 10s = 10/s sustained
+})
+
+// Can immediately make 100 requests (burst)
+// Then limited to ~10 per second
+```
+
+### Multiple Rate Limiters
+
+```typescript
+// Limit by both requests per second AND requests per minute
+const perSecondLimiter = createRateLimiter(apiCall, {
+  requests: 10,
+  interval: 1000,
+})
+
+const perMinuteLimiter = createRateLimiter(perSecondLimiter, {
+  requests: 500,
+  interval: 60000,
+})
+
+// Must pass both rate limiters
+await perMinuteLimiter(data)
+```
+
+## Combining with Other Patterns
+
+### Rate Limiter + Retry
+
+```typescript
+import { createRateLimiter, withRetry, CruelRateLimitError } from 'cruel'
+
+// Retry when rate limited
+const resilientAPI = withRetry(
+  createRateLimiter(apiCall, {
+    requests: 10,
+    interval: 1000,
+  }),
+  {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+    retryIf: (error) => error instanceof CruelRateLimitError,
+  }
+)
+```
+
+### Rate Limiter + Queue
+
+```typescript
+import { createRateLimiter, createBulkhead } from 'cruel'
+
+// Queue requests when rate limited
+const queuedAPI = createBulkhead(
+  createRateLimiter(apiCall, {
+    requests: 10,
+    interval: 1000,
+  }),
+  {
+    maxConcurrent: 1,
+    maxQueue: 100,
+  }
+)
+```
+
+### Rate Limiter + Circuit Breaker
+
+```typescript
+import { createRateLimiter, createCircuitBreaker } from 'cruel'
+
+const resilientAPI = createCircuitBreaker(
+  createRateLimiter(apiCall, {
+    requests: 100,
+    interval: 60000,
+  }),
+  {
+    threshold: 5,
+    timeout: 30000,
+  }
+)
+```
+
+### With Compose
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientAPI = cruel.compose(apiCall, {
+  rateLimiter: {
+    requests: 100,
+    interval: 60000,
+    onLimit: () => console.warn('Rate limited'),
+  },
+  retry: {
+    attempts: 3,
+    backoff: 'exponential',
+  },
+  bulkhead: {
+    maxConcurrent: 10,
+  },
+})
+```
+
+## Advanced Examples
+
+### Adaptive Rate Limiter
+
+```typescript
+class AdaptiveRateLimiter {
+  private currentLimit: number
+  private errorRate: number = 0
+
+  constructor(
+    private baseLimit: number,
+    private interval: number
+  ) {
+    this.currentLimit = baseLimit
+  }
+
+  createLimiter<T extends AnyFn>(fn: T) {
+    return createRateLimiter(fn, {
+      requests: this.currentLimit,
+      interval: this.interval,
+    })
+  }
+
+  recordResponse(statusCode: number) {
+    if (statusCode === 429) {
+      // Rate limited by server, reduce limit
+      this.errorRate = Math.min(1, this.errorRate + 0.1)
+      this.currentLimit = Math.max(1, Math.floor(this.currentLimit * 0.8))
+    } else if (statusCode < 400) {
+      // Success, slowly increase limit
+      this.errorRate = Math.max(0, this.errorRate - 0.01)
+      if (this.errorRate < 0.05 && this.currentLimit < this.baseLimit) {
+        this.currentLimit = Math.min(this.baseLimit, this.currentLimit + 1)
+      }
+    }
+  }
+}
+
+const adaptive = new AdaptiveRateLimiter(100, 60000)
+const apiCall = adaptive.createLimiter(fetchData)
+
+// After each call
+const response = await apiCall()
+adaptive.recordResponse(response.status)
+```
+
+### Distributed Rate Limiter (Redis)
+
+```typescript
+import Redis from 'ioredis'
+
+class RedisRateLimiter {
+  constructor(private redis: Redis, private key: string) {}
+
+  async checkLimit(requests: number, interval: number): Promise<boolean> {
+    const now = Date.now()
+    const windowStart = now - interval
+
+    // Remove old entries
+    await this.redis.zremrangebyscore(this.key, 0, windowStart)
+
+    // Count requests in current window
+    const count = await this.redis.zcard(this.key)
+
+    if (count >= requests) {
+      return false
+    }
+
+    // Add current request
+    await this.redis.zadd(this.key, now, `${now}-${Math.random()}`)
+    await this.redis.expire(this.key, Math.ceil(interval / 1000))
+
+    return true
+  }
+}
+
+function createDistributedRateLimiter<T extends AnyFn>(
+  fn: T,
+  redis: Redis,
+  key: string,
+  options: RateLimiterOptions
+): T {
+  const limiter = new RedisRateLimiter(redis, key)
+
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    const allowed = await limiter.checkLimit(options.requests, options.interval)
+
+    if (!allowed) {
+      options.onLimit?.()
+      throw new CruelRateLimitError(Math.ceil(options.interval / 1000))
+    }
+
+    return fn(...args) as ReturnType<T>
+  }
+}
+```
+
+### Weighted Rate Limiter
+
+```typescript
+interface WeightedRateLimiterOptions extends RateLimiterOptions {
+  getWeight?: (...args: any[]) => number
+}
+
+function createWeightedRateLimiter<T extends AnyFn>(
+  fn: T,
+  options: WeightedRateLimiterOptions
+): T {
+  let tokens = options.requests
+  let lastRefill = Date.now()
+
+  const refill = () => {
+    const now = Date.now()
+    const elapsed = now - lastRefill
+    const tokensToAdd = Math.floor(elapsed / options.interval) * options.requests
+    if (tokensToAdd > 0) {
+      tokens = Math.min(options.requests, tokens + tokensToAdd)
+      lastRefill = now
+    }
+  }
+
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    refill()
+
+    const weight = options.getWeight ? options.getWeight(...args) : 1
+
+    if (tokens < weight) {
+      options.onLimit?.()
+      throw new CruelRateLimitError(Math.ceil(options.interval / 1000))
+    }
+
+    tokens -= weight
+    return fn(...args) as ReturnType<T>
+  }
+}
+
+const weightedAPI = createWeightedRateLimiter(
+  apiCall,
+  {
+    requests: 100,
+    interval: 60000,
+    getWeight: (request) => {
+      // Batch requests cost more tokens
+      return request.batch ? 10 : 1
+    },
+  }
+)
+```
+
+## Error Handling
+
+Rate limiter throws `CruelRateLimitError` when limit is exceeded:
+
+```typescript
+import { CruelRateLimitError } from 'cruel'
+
+try {
+  await limitedAPI(data)
+} catch (error) {
+  if (error instanceof CruelRateLimitError) {
+    console.log(`Rate limited for ${error.retryAfter} seconds`)
+    // error.status === 429
+    // error.retryAfter - seconds to wait
+  }
+}
+```
+
+## Best Practices
+
+- **Match external rate limits**: Set limits to match API provider's limits
+- **Add buffer**: Set slightly lower than actual limit to account for timing variance
+- **Use per-user limiters**: Prevent one user from consuming all quota
+- **Implement retry logic**: Handle rate limit errors gracefully
+- **Monitor token usage**: Track how close to limits you're operating
+- **Log rate limit hits**: Help identify usage patterns
+- **Consider burst capacity**: Allow short bursts while maintaining sustained rate
+- **Use distributed limiters**: For multi-instance deployments
+
+## Rate Limit Strategies
+
+### Fixed Window
+```typescript
+// Simple but allows burst at window boundaries
+createRateLimiter(fn, { requests: 100, interval: 60000 })
+```
+
+### Token Bucket (Default)
+```typescript
+// Smooths traffic, allows controlled bursts
+createRateLimiter(fn, { requests: 100, interval: 60000 })
+```
+
+### Sliding Window (Custom)
+```typescript
+// Most accurate but more complex
+// Implement using custom limiter with timestamp tracking
+```
+
+## Configuration Examples
+
+| API Provider | Requests | Interval | Notes |
+|--------------|----------|----------|-------|
+| Twitter | 300 | 900000 | 300 requests per 15 minutes |
+| GitHub | 5000 | 3600000 | 5000 requests per hour |
+| Stripe | 100 | 1000 | 100 requests per second |
+| OpenAI | 60 | 60000 | 60 requests per minute |
+| Custom API | 1000 | 60000 | Typical REST API limit |
+
+## Common Rate Limits
+
+| Scenario | Requests | Interval | Rate |
+|----------|----------|----------|------|
+| Free tier | 10 | 60000 | 10/min |
+| Basic tier | 100 | 60000 | 100/min |
+| Premium tier | 1000 | 60000 | 1000/min |
+| Internal API | 100 | 1000 | 100/sec |
+| Public API | 10 | 1000 | 10/sec |

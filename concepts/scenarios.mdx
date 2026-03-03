@@ -1,0 +1,518 @@
+---
+title: Scenarios
+description: Simulate real-world failure scenarios and incidents over time
+---
+
+## What are Scenarios?
+
+Scenarios are time-based chaos patterns that simulate real-world incidents and failure conditions. Unlike static chaos injection, scenarios run for a specific duration and can model complex failure modes like network partitions, data center failovers, and traffic spikes.
+
+## Basic Usage
+
+Define and play scenarios:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Wrap your functions
+const fetchData = cruel(async () => { /* ... */ })
+
+// Define a scenario
+cruel.scenario('network-outage', {
+  chaos: { fail: 1 },  // 100% failure rate
+  duration: 5000        // Lasts 5 seconds
+})
+
+// Play the scenario
+await cruel.play('network-outage')
+
+// Scenario stops automatically after 5 seconds
+// Or stop manually:
+cruel.stop()
+```
+
+## Scenario API
+
+### cruel.scenario()
+
+Define a reusable scenario:
+
+```typescript
+cruel.scenario(name: string, config: {
+  chaos?: ChaosOptions,
+  duration?: number  // In milliseconds
+})
+```
+
+### cruel.play()
+
+Start a scenario:
+
+```typescript
+await cruel.play('scenario-name')
+// Returns after scenario duration completes
+
+// Or without await for background execution
+cruel.play('scenario-name')  // Runs in background
+```
+
+### cruel.stop()
+
+Manually stop the active scenario:
+
+```typescript
+cruel.stop()  // Disables chaos and clears active scenario
+```
+
+### cruel.activeScenario()
+
+Check which scenario is running:
+
+```typescript
+const active = cruel.activeScenario()
+if (active) {
+  console.log(`Currently running: ${active}`)
+} else {
+  console.log('No active scenario')
+}
+```
+
+## Built-in Scenarios
+
+Cruel includes 12 pre-configured scenarios for common failure modes:
+
+### networkPartition
+
+Complete network failure:
+
+```typescript
+await cruel.play('networkPartition')
+// { fail: 1, duration: 5000 }
+```
+
+- **100% failure rate** - All requests fail
+- **5 second duration**
+- **Use case:** Test network split-brain scenarios
+
+### highLatency
+
+Severe latency spike:
+
+```typescript
+await cruel.play('highLatency')
+// { delay: [2000, 5000], duration: 10000 }
+```
+
+- **2-5 second delays**
+- **10 second duration**
+- **Use case:** Test timeout handling and user experience degradation
+
+### degraded
+
+Partial service degradation:
+
+```typescript
+await cruel.play('degraded')
+// { fail: 0.1, delay: [500, 1500], duration: 30000 }
+```
+
+- **10% failure rate**
+- **500-1500ms latency**
+- **30 second duration**
+- **Use case:** Test graceful degradation under load
+
+### outage
+
+Major service outage:
+
+```typescript
+await cruel.play('outage')
+// { fail: 1, timeout: 0.5, duration: 60000 }
+```
+
+- **100% failures and 50% timeouts**
+- **60 second duration**
+- **Use case:** Test disaster recovery procedures
+
+### recovery
+
+Post-incident recovery phase:
+
+```typescript
+await cruel.play('recovery')
+// { fail: 0.3, delay: [100, 500], duration: 15000 }
+```
+
+- **30% failure rate**
+- **100-500ms latency**
+- **15 second duration**
+- **Use case:** Test system behavior during recovery
+
+### blackFriday
+
+High traffic with intermittent issues:
+
+```typescript
+await cruel.play('blackFriday')
+// { delay: [1000, 3000], fail: 0.15, jitter: 1000, duration: 60000 }
+```
+
+- **1-3 second base latency**
+- **15% failure rate**
+- **0-1 second jitter**
+- **60 second duration**
+- **Use case:** Test black friday / traffic spike scenarios
+
+### mobileNetwork
+
+Unstable mobile connectivity:
+
+```typescript
+await cruel.play('mobileNetwork')
+// { delay: [500, 2000], fail: 0.2, timeout: 0.1, duration: 30000 }
+```
+
+- **500-2000ms latency**
+- **20% failures, 10% timeouts**
+- **30 second duration**
+- **Use case:** Test mobile app resilience
+
+### datacenterFailover
+
+Data center switching:
+
+```typescript
+await cruel.play('datacenterFailover')
+// { fail: 0.5, delay: [200, 800], duration: 20000 }
+```
+
+- **50% failure rate**
+- **200-800ms latency**
+- **20 second duration**
+- **Use case:** Test multi-region failover logic
+
+### ddosAttack
+
+DDoS-like overload:
+
+```typescript
+await cruel.play('ddosAttack')
+// { timeout: 0.4, delay: [2000, 10000], duration: 30000 }
+```
+
+- **40% timeouts**
+- **2-10 second delays**
+- **30 second duration**
+- **Use case:** Test rate limiting and backpressure
+
+### coldStart
+
+Serverless cold start delays:
+
+```typescript
+await cruel.play('coldStart')
+// { delay: [3000, 8000], duration: 10000 }
+```
+
+- **3-8 second delays**
+- **10 second duration**
+- **Use case:** Test serverless initialization latency
+
+### gcPause
+
+Garbage collection pauses:
+
+```typescript
+await cruel.play('gcPause')
+// { delay: [100, 500], spike: [500, 2000], duration: 15000 }
+```
+
+- **100-500ms base delay**
+- **500-2000ms occasional spikes**
+- **15 second duration**
+- **Use case:** Test impact of GC pauses
+
+### connectionPool
+
+Connection pool exhaustion:
+
+```typescript
+await cruel.play('connectionPool')
+// { fail: 0.3, timeout: 0.2, duration: 20000 }
+```
+
+- **30% failures, 20% timeouts**
+- **20 second duration**
+- **Use case:** Test connection pool management
+
+## Creating Custom Scenarios
+
+<Tabs>
+  <Tab title="Simple Scenario">
+    ```typescript
+    import { cruel } from 'cruel'
+    
+    cruel.scenario('maintenance-window', {
+      chaos: {
+        fail: 0.5,
+        delay: [1000, 2000]
+      },
+      duration: 30000  // 30 seconds
+    })
+    
+    await cruel.play('maintenance-window')
+    ```
+  </Tab>
+  
+  <Tab title="Complex Scenario">
+    ```typescript
+    import { cruel } from 'cruel'
+    
+    cruel.scenario('multi-region-failure', {
+      chaos: {
+        fail: 0.7,           // 70% failures
+        timeout: 0.2,        // 20% timeouts
+        delay: [2000, 5000], // 2-5s latency
+        jitter: 1000,        // Extra variance
+        spike: [5000, 10000] // Occasional huge delays
+      },
+      duration: 120000  // 2 minutes
+    })
+    
+    await cruel.play('multi-region-failure')
+    ```
+  </Tab>
+  
+  <Tab title="Infinite Scenario">
+    ```typescript
+    import { cruel } from 'cruel'
+    
+    // Scenario without duration runs indefinitely
+    cruel.scenario('manual-chaos', {
+      chaos: { fail: 0.2, delay: 500 }
+      // No duration - must call cruel.stop() manually
+    })
+    
+    cruel.play('manual-chaos')  // Don't await
+    
+    // Do your testing...
+    await runTests()
+    
+    // Stop when done
+    cruel.stop()
+    ```
+  </Tab>
+</Tabs>
+
+## Scenario Chains
+
+Sequence scenarios to simulate complex incidents:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Simulate incident lifecycle
+async function simulateIncident() {
+  console.log('Incident start: Network partition')
+  await cruel.play('networkPartition')  // 5s total outage
+  
+  console.log('Partial recovery: Degraded service')
+  await cruel.play('degraded')  // 30s degraded
+  
+  console.log('Recovering: Stabilizing')
+  await cruel.play('recovery')  // 15s recovery
+  
+  console.log('Incident resolved')
+}
+
+await simulateIncident()
+```
+
+## Using Scenarios in Tests
+
+<CodeGroup>
+```typescript Jest/Vitest
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { cruel } from 'cruel'
+import { fetchUserData } from './api'
+
+describe('Resilience Tests', () => {
+  beforeEach(() => {
+    // Wrap functions before each test
+    cruel(fetchUserData)
+  })
+  
+  afterEach(() => {
+    cruel.stop()
+    cruel.reset()
+  })
+  
+  it('handles network partition', async () => {
+    await cruel.play('networkPartition')
+    
+    // Should use cached data during partition
+    const result = await myApp.getUserData()
+    expect(result).toBeTruthy()
+    expect(result.source).toBe('cache')
+  })
+  
+  it('recovers from degraded service', async () => {
+    await cruel.play('degraded')
+    
+    // Should complete despite 10% failures
+    const results = await Promise.allSettled(
+      Array(100).fill(0).map(() => fetchUserData())
+    )
+    
+    const successful = results.filter(r => r.status === 'fulfilled')
+    expect(successful.length).toBeGreaterThan(80)
+  })
+})
+```
+
+```typescript Playwright
+import { test, expect } from '@playwright/test'
+import { cruel } from 'cruel'
+
+test.describe('E2E Resilience', () => {
+  test.beforeEach(async () => {
+    cruel.patchFetch()
+  })
+  
+  test.afterEach(() => {
+    cruel.stop()
+    cruel.reset()
+  })
+  
+  test('handles high latency gracefully', async ({ page }) => {
+    await cruel.play('highLatency')
+    
+    await page.goto('/dashboard')
+    
+    // Should show loading states
+    await expect(page.locator('.loading')).toBeVisible()
+    
+    // Should eventually load despite delays
+    await expect(page.locator('.data')).toBeVisible({
+      timeout: 10000
+    })
+  })
+})
+```
+</CodeGroup>
+
+## Scenario Monitoring
+
+Track scenario impact:
+
+```typescript
+import { cruel } from 'cruel'
+
+cruel.scenario('test-chaos', {
+  chaos: { fail: 0.2, delay: [500, 1500] },
+  duration: 30000
+})
+
+const before = cruel.stats()
+
+await cruel.play('test-chaos')
+
+const after = cruel.stats()
+
+console.log('Scenario Impact:')
+console.log(`Total calls: ${after.calls - before.calls}`)
+console.log(`Failures: ${after.failures - before.failures}`)
+console.log(`Avg latency: ${after.avg}ms`)
+console.log(`p95 latency: ${after.p95}ms`)
+```
+
+## Background Scenarios
+
+Run scenarios without blocking:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Start scenario in background (no await)
+cruel.play('degraded')
+
+// Continue with other operations
+await runTests()
+await collectMetrics()
+
+// Scenario runs in parallel for 30 seconds
+// Then stops automatically
+```
+
+## Dynamic Scenarios
+
+Create scenarios programmatically:
+
+```typescript
+import { cruel } from 'cruel'
+
+function createLoadScenario(load: 'low' | 'medium' | 'high') {
+  const configs = {
+    low: { fail: 0.05, delay: [100, 300] },
+    medium: { fail: 0.15, delay: [300, 1000] },
+    high: { fail: 0.3, delay: [1000, 3000] }
+  }
+  
+  cruel.scenario(`load-${load}`, {
+    chaos: configs[load],
+    duration: 60000
+  })
+}
+
+createLoadScenario('low')
+createLoadScenario('medium')
+createLoadScenario('high')
+
+await cruel.play('load-high')
+```
+
+## Best Practices
+
+<Note>
+  **Test incrementally:** Start with mild scenarios and progress to severe ones.
+</Note>
+
+<Note>
+  **Document results:** Record which scenarios your system can handle and which cause failures.
+</Note>
+
+<Note>
+  **Automate:** Run scenarios in CI/CD to catch resilience regressions.
+</Note>
+
+<Warning>
+  **Duration matters:** Longer scenarios reveal issues that short bursts might miss.
+</Warning>
+
+## Scenario Comparison
+
+| Scenario | Failure % | Timeout % | Max Delay | Duration | Severity |
+|----------|-----------|-----------|-----------|----------|-----------|
+| degraded | 10% | 0% | 1.5s | 30s | Low |
+| mobileNetwork | 20% | 10% | 2s | 30s | Medium |
+| datacenterFailover | 50% | 0% | 0.8s | 20s | Medium |
+| ddosAttack | 0% | 40% | 10s | 30s | High |
+| outage | 100% | 50% | - | 60s | Critical |
+| networkPartition | 100% | 0% | - | 5s | Critical |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Chaos Injection" icon="bolt" href="/concepts/chaos-injection">
+    Learn about the underlying chaos mechanics
+  </Card>
+  <Card title="Presets" icon="sliders" href="/concepts/presets">
+    Use pre-configured chaos profiles
+  </Card>
+  <Card title="Statistics" icon="chart-line" href="/advanced/statistics">
+    Track chaos impact with detailed metrics
+  </Card>
+  <Card title="Testing Guide" icon="vial" href="/examples/testing-integration">
+    Integrate scenarios into your test suite
+  </Card>
+</CardGroup>

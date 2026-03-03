@@ -1,0 +1,241 @@
+---
+title: Test Command
+description: Test endpoints with chaos injection using the Cruel CLI
+---
+
+The `test` command runs chaos tests against an endpoint, injecting failures, delays, and timeouts to validate your application's resilience.
+
+## Syntax
+
+```bash
+cruel test <url> [options]
+```
+
+## Arguments
+
+<ParamField path="url" type="string" required>
+  The endpoint URL to test (e.g., https://api.example.com/users)
+</ParamField>
+
+## Options
+
+<ParamField path="--count" type="number" default="10">
+  Number of requests to send during the test
+</ParamField>
+
+<ParamField path="--fail" type="number">
+  Failure rate between 0 and 1 (e.g., 0.1 = 10% failure rate)
+</ParamField>
+
+<ParamField path="--delay" type="number | string">
+  Delay in milliseconds or min-max range (e.g., 100 or "100-500")
+</ParamField>
+
+<ParamField path="--timeout" type="number">
+  Timeout rate between 0 and 1 (e.g., 0.05 = 5% timeout rate)
+</ParamField>
+
+<ParamField path="--preset" type="string">
+  Use a predefined chaos configuration preset instead of individual options
+  
+  **Available:** development, staging, production, harsh, nightmare, apocalypse
+</ParamField>
+
+<ParamField path="--retry" type="number">
+  Number of retry attempts for failed requests with exponential backoff
+</ParamField>
+
+<ParamField path="--circuit" type="number">
+  Circuit breaker threshold - number of failures before circuit opens
+</ParamField>
+
+## Basic Usage
+
+<CodeGroup>
+```bash Simple test
+cruel test https://api.example.com
+```
+
+```bash With failure rate
+cruel test https://api.example.com --fail 0.1 --count 20
+```
+
+```bash With delay injection
+cruel test https://api.example.com --delay 500 --count 15
+```
+
+```bash With timeout injection
+cruel test https://api.example.com --timeout 0.05 --count 30
+```
+</CodeGroup>
+
+## Using Presets
+
+<CodeGroup>
+```bash Development preset
+cruel test https://api.example.com --preset development
+```
+
+```bash Nightmare preset
+cruel test https://api.example.com --preset nightmare
+```
+
+```bash Apocalypse preset
+cruel test https://api.example.com --preset apocalypse --count 50
+```
+</CodeGroup>
+
+## Advanced Usage
+
+### With Retry Logic
+
+Test with automatic retries and exponential backoff:
+
+```bash
+cruel test https://api.example.com --fail 0.3 --retry 3 --count 20
+```
+
+### With Circuit Breaker
+
+Test with circuit breaker pattern to prevent cascading failures:
+
+```bash
+cruel test https://api.example.com --fail 0.5 --circuit 5 --count 30
+```
+
+The circuit opens after 5 failures and times out after 10 seconds.
+
+### Combined Options
+
+Combine multiple chaos patterns:
+
+```bash
+cruel test https://api.example.com \
+  --fail 0.2 \
+  --delay 200 \
+  --timeout 0.1 \
+  --retry 3 \
+  --circuit 10 \
+  --count 50
+```
+
+## Output Example
+
+```bash
+$ cruel test https://api.example.com --fail 0.1 --count 20
+
+testing https://api.example.com
+requests: 20
+config: {"fail":0.1}
+
+..X.......X.........
+
+results:
+  success: 18/20 (90%)
+  failed: 2/20 (10%)
+  timeouts: 0/20 (0%)
+
+latency:
+  avg: 145ms
+  min: 98ms
+  max: 234ms
+  p50: 142ms
+  p95: 198ms
+  p99: 234ms
+```
+
+## Output Indicators
+
+During the test, real-time feedback is shown:
+
+- `.` (green) - Successful request
+- `X` (red) - Failed request
+- `T` (yellow) - Timed out request
+
+## Results Breakdown
+
+### Success Metrics
+
+- **success**: Number and percentage of successful requests
+- **failed**: Number and percentage of failed requests
+- **timeouts**: Number and percentage of timed out requests
+
+### Latency Metrics
+
+- **avg**: Average response time
+- **min**: Minimum response time
+- **max**: Maximum response time
+- **p50**: 50th percentile (median)
+- **p95**: 95th percentile
+- **p99**: 99th percentile
+
+## Configuration Details
+
+When you run a test, the CLI displays your configuration:
+
+```bash
+testing https://api.example.com
+requests: 20
+config: {"fail":0.1,"delay":500}
+retry: 3 attempts
+circuit breaker: 5 threshold
+```
+
+This shows:
+- The URL being tested
+- Number of requests that will be sent
+- Chaos configuration applied
+- Retry configuration (if enabled)
+- Circuit breaker threshold (if enabled)
+
+## Error Handling
+
+If you forget to provide a URL:
+
+```bash
+$ cruel test
+error: url required
+usage: cruel test <url> [options]
+```
+
+## Use Cases
+
+### Validate Error Handling
+
+Test that your application handles failures gracefully:
+
+```bash
+cruel test https://api.example.com --fail 0.5 --count 100
+```
+
+### Test Timeout Resilience
+
+Validate timeout handling and recovery:
+
+```bash
+cruel test https://api.example.com --timeout 0.2 --count 50
+```
+
+### Simulate Network Latency
+
+Test performance under network delays:
+
+```bash
+cruel test https://api.example.com --delay 1000 --count 30
+```
+
+### Test Retry Logic
+
+Validate that retries work correctly:
+
+```bash
+cruel test https://api.example.com --fail 0.3 --retry 5
+```
+
+### Stress Test Circuit Breaker
+
+Test circuit breaker opens and recovers:
+
+```bash
+cruel test https://api.example.com --fail 0.8 --circuit 3 --count 50
+```

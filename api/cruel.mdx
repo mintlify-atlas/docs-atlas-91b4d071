@@ -1,0 +1,294 @@
+---
+title: "cruel()"
+description: "Main function for wrapping functions with chaos injection"
+---
+
+## Overview
+
+The `cruel()` function is the primary API for wrapping any function with chaos engineering behaviors. It intercepts function calls and randomly injects failures, delays, timeouts, and data corruption based on configurable options.
+
+## Signature
+
+```typescript
+function cruel<T extends AnyFn>(fn: T, options?: ChaosOptions): T
+```
+
+## Parameters
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap with chaos injection. Can be any synchronous or asynchronous function.
+</ParamField>
+
+<ParamField path="options" type="ChaosOptions">
+  Configuration object for chaos behaviors.
+  
+  <ParamField path="fail" type="number">
+    Probability (0-1) of throwing a `CruelError`. Example: `0.1` = 10% failure rate.
+  </ParamField>
+  
+  <ParamField path="delay" type="number | [number, number]">
+    Fixed delay in milliseconds, or range `[min, max]` for random delay.
+  </ParamField>
+  
+  <ParamField path="timeout" type="number">
+    Probability (0-1) of causing the function to hang indefinitely.
+  </ParamField>
+  
+  <ParamField path="jitter" type="number">
+    Maximum random delay in milliseconds to add on top of `delay`.
+  </ParamField>
+  
+  <ParamField path="corrupt" type="number">
+    Probability (0-1) of corrupting string responses by replacing a random character.
+  </ParamField>
+  
+  <ParamField path="spike" type="number | [number, number]">
+    Additional delay spike in milliseconds, or range for random spike.
+  </ParamField>
+  
+  <ParamField path="enabled" type="boolean">
+    Whether chaos injection is enabled for this wrapper. Set to `false` to disable.
+  </ParamField>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="wrapped" type="T">
+  Returns a wrapped version of the original function with the same signature. When called, the wrapped function applies chaos behaviors before executing the original function.
+</ResponseField>
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { cruel } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  return await db.users.findById(id)
+}
+
+// Wrap with 10% failure rate and 100-500ms delay
+const unreliableFetch = cruel(fetchUser, {
+  fail: 0.1,
+  delay: [100, 500]
+})
+
+// Use the wrapped function
+const user = await unreliableFetch('user-123')
+```
+
+### Testing Timeout Handling
+
+```typescript
+const slowApi = cruel(apiCall, {
+  timeout: 0.2,  // 20% chance of timeout
+  delay: [1000, 3000]
+})
+
+try {
+  await slowApi()
+} catch (error) {
+  if (error.code === 'CRUEL_TIMEOUT') {
+    // Handle timeout
+  }
+}
+```
+
+### Data Corruption Testing
+
+```typescript
+const getJSON = cruel(fetchJSON, {
+  corrupt: 0.15  // 15% chance of corruption
+})
+
+const data = await getJSON('/api/data')
+// Data might have random character replaced with �
+```
+
+## Preset Methods
+
+`cruel` provides convenient preset methods for common scenarios:
+
+### cruel.fail()
+
+```typescript
+cruel.fail<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+Injects random failures with specified probability.
+
+```typescript
+const flaky = cruel.fail(apiCall, 0.2)  // 20% failure rate
+```
+
+### cruel.slow()
+
+```typescript
+cruel.slow<T extends AnyFn>(fn: T, delay: number | [number, number] = 500): T
+```
+
+Adds delay to function execution.
+
+```typescript
+const delayed = cruel.slow(apiCall, [500, 2000])
+```
+
+### cruel.timeout()
+
+```typescript
+cruel.timeout<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+Causes function to hang with specified probability.
+
+```typescript
+const hanging = cruel.timeout(apiCall, 0.05)  // 5% timeout rate
+```
+
+### cruel.flaky()
+
+```typescript
+cruel.flaky<T extends AnyFn>(fn: T, intensity = 0.2): T
+```
+
+Combines failures, timeouts, and delays for realistic flaky behavior.
+
+```typescript
+const flaky = cruel.flaky(apiCall)  // Default 20% intensity
+```
+
+### cruel.unreliable()
+
+```typescript
+cruel.unreliable<T extends AnyFn>(fn: T): T
+```
+
+High-intensity chaos with 30% failures, 10% timeouts, and variable delays.
+
+```typescript
+const unreliable = cruel.unreliable(apiCall)
+```
+
+### cruel.nightmare()
+
+```typescript
+cruel.nightmare<T extends AnyFn>(fn: T): T
+```
+
+Extreme chaos with 50% failures, 20% timeouts, and long delays.
+
+```typescript
+const nightmare = cruel.nightmare(apiCall)
+```
+
+## Specialized Namespaces
+
+### cruel.network
+
+Network-specific chaos injection. See [Network API](/api/network) for details.
+
+```typescript
+const slow = cruel.network.latency(apiCall, [1000, 3000])
+const lossy = cruel.network.packetLoss(apiCall, 0.1)
+```
+
+### cruel.http
+
+HTTP-specific chaos behaviors. See [HTTP API](/api/http) for details.
+
+```typescript
+const serverErrors = cruel.http.serverError(apiCall, 0.1)
+const rateLimited = cruel.http.rateLimit(apiCall, 0.05)
+```
+
+### cruel.stream
+
+Stream manipulation for testing streaming APIs. See [Stream API](/api/stream) for details.
+
+```typescript
+const cut = cruel.stream.cut(streamHandler, 0.1)
+const corrupt = cruel.stream.corrupt(streamHandler, 0.15)
+```
+
+### cruel.ai
+
+AI/LLM-specific chaos injection. See [AI API](/api/ai) for details.
+
+```typescript
+const rateLimited = cruel.ai.rateLimit(llmCall, 0.1)
+const slow = cruel.ai.slowTokens(llmCall, [50, 200])
+```
+
+## Global Control
+
+### cruel.enable()
+
+Enables global chaos injection for all wrapped functions.
+
+```typescript
+cruel.enable({ fail: 0.05, delay: [10, 100] })
+```
+
+### cruel.disable()
+
+Disables all chaos injection globally.
+
+```typescript
+cruel.disable()
+```
+
+### cruel.toggle()
+
+Toggles chaos injection on/off.
+
+```typescript
+const enabled = cruel.toggle()  // Returns new state
+```
+
+### cruel.isEnabled()
+
+Checks if chaos is currently enabled.
+
+```typescript
+if (cruel.isEnabled()) {
+  console.log('Chaos is active')
+}
+```
+
+## Statistics
+
+### cruel.stats()
+
+Returns detailed statistics about chaos injection.
+
+```typescript
+const stats = cruel.stats()
+console.log(stats)
+// {
+//   calls: 100,
+//   failures: 12,
+//   timeouts: 5,
+//   delays: 47,
+//   corrupted: 3,
+//   p50: 234,
+//   p95: 987,
+//   p99: 1543,
+//   avg: 345,
+//   ...
+// }
+```
+
+### cruel.resetStats()
+
+Resets all statistics counters.
+
+```typescript
+cruel.resetStats()
+```
+
+## Related Methods
+
+- [createCruel()](/api/create-cruel) - Create a custom cruel instance with default options
+- [cruel.wrap()](/api/wrap) - Fluent API for chaining chaos behaviors
+- [cruel.compose()](/api/wrap#compose) - Compose multiple resilience patterns

@@ -1,0 +1,499 @@
+---
+title: cruelModel
+description: Wrap AI SDK models with chaos injection
+---
+
+`cruelModel()` wraps individual AI SDK v6 model instances to inject chaos into both generation and streaming operations.
+
+## API Reference
+
+```typescript
+function cruelModel<T extends LanguageModelV3>(
+  model: T,
+  options?: CruelModelOptions
+): T
+```
+
+<ParamField path="model" type="LanguageModelV3" required>
+  The AI SDK model instance to wrap. Works with any provider:
+  - `@ai-sdk/openai`
+  - `@ai-sdk/anthropic`
+  - `@ai-sdk/google`
+  - `@ai-sdk/mistral`
+  - `@ai-sdk/gateway`
+  - Any AI SDK v6 compatible provider
+</ParamField>
+
+<ParamField path="options" type="CruelModelOptions">
+  Chaos configuration options. See [Chaos Options](#chaos-options) below.
+</ParamField>
+
+<ResponseField name="return" type="T">
+  Returns a wrapped model with the same type signature as the input model.
+</ResponseField>
+
+## Basic Usage
+
+<CodeGroup>
+```typescript OpenAI
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.2,
+  overloaded: 0.1,
+  delay: [100, 500],
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Explain distributed systems',
+})
+```
+
+```typescript Anthropic
+import { anthropic } from '@ai-sdk/anthropic'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(anthropic('claude-3-5-sonnet-20241022'), {
+  contentFilter: 0.05,
+  contextLength: 0.02,
+  delay: [50, 200],
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Write a technical document',
+})
+```
+
+```typescript Gateway
+import { gateway } from '@ai-sdk/gateway'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(gateway('openai/gpt-4'), {
+  rateLimit: 0.15,
+  streamCut: 0.05,
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Hello',
+})
+```
+</CodeGroup>
+
+## Chaos Options
+
+### API Errors
+
+Simulate common API failures:
+
+<ParamField path="rateLimit" type="number | { rate: number; retryAfter?: number }">
+  Probability of rate limit errors (0-1).
+  
+  ```typescript
+  // Simple: 20% chance of rate limit
+  rateLimit: 0.2
+  
+  // Advanced: Custom retry-after header
+  rateLimit: { rate: 0.2, retryAfter: 30 }
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 429`
+</ParamField>
+
+<ParamField path="overloaded" type="number">
+  Probability of model overload errors (0-1).
+  
+  ```typescript
+  overloaded: 0.1 // 10% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 529`
+</ParamField>
+
+<ParamField path="invalidApiKey" type="number">
+  Probability of invalid API key errors (0-1).
+  
+  ```typescript
+  invalidApiKey: 0.05 // 5% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 401`, not retryable
+</ParamField>
+
+<ParamField path="quotaExceeded" type="number">
+  Probability of quota exceeded errors (0-1).
+  
+  ```typescript
+  quotaExceeded: 0.03 // 3% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 402`, not retryable
+</ParamField>
+
+<ParamField path="modelUnavailable" type="number">
+  Probability of model unavailable errors (0-1).
+  
+  ```typescript
+  modelUnavailable: 0.08 // 8% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 503`
+</ParamField>
+
+### Content Issues
+
+<ParamField path="contextLength" type="number">
+  Probability of context length exceeded errors (0-1).
+  
+  ```typescript
+  contextLength: 0.05 // 5% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 400`, not retryable
+</ParamField>
+
+<ParamField path="contentFilter" type="number">
+  Probability of content filter errors (0-1).
+  
+  ```typescript
+  contentFilter: 0.02 // 2% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 400`, not retryable
+</ParamField>
+
+<ParamField path="emptyResponse" type="number">
+  Probability of empty response errors (0-1).
+  
+  ```typescript
+  emptyResponse: 0.01 // 1% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 200`, not retryable
+</ParamField>
+
+<ParamField path="partialResponse" type="number">
+  Probability of truncated text responses (0-1). Only applies to `generateText()`.
+  
+  ```typescript
+  partialResponse: 0.1 // 10% chance
+  ```
+  
+  Returns truncated content (10-70% of original length)
+</ParamField>
+
+### Latency
+
+<ParamField path="delay" type="number | [number, number]">
+  Add latency before responses.
+  
+  ```typescript
+  // Fixed delay
+  delay: 500 // Always 500ms
+  
+  // Random delay range
+  delay: [100, 1000] // Between 100-1000ms
+  ```
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Probability of request timeouts (0-1). Request never completes.
+  
+  ```typescript
+  timeout: 0.05 // 5% chance of timeout
+  ```
+</ParamField>
+
+### Streaming Chaos
+
+Options that only affect `streamText()` and streaming operations:
+
+<ParamField path="streamCut" type="number">
+  Probability of stream interruption during token streaming (0-1).
+  
+  ```typescript
+  streamCut: 0.1 // 10% chance of stream cut
+  ```
+  
+  Throws: `CruelAPIError` mid-stream
+</ParamField>
+
+<ParamField path="slowTokens" type="number | [number, number]">
+  Add delay between streamed tokens (milliseconds).
+  
+  ```typescript
+  // Fixed delay per token
+  slowTokens: 50 // 50ms per token
+  
+  // Random delay per token
+  slowTokens: [20, 100] // 20-100ms per token
+  ```
+</ParamField>
+
+<ParamField path="corruptChunks" type="number">
+  Probability of corrupted text chunks (0-1). Injects replacement character (U+FFFD).
+  
+  ```typescript
+  corruptChunks: 0.05 // 5% chance per chunk
+  ```
+</ParamField>
+
+### Response Modification
+
+<ParamField path="finishReason" type="'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'">
+  Override the finish reason in responses.
+  
+  ```typescript
+  finishReason: 'length' // Always report max tokens reached
+  ```
+</ParamField>
+
+<ParamField path="tokenUsage" type="{ inputTokens?: number; outputTokens?: number }">
+  Override token usage reporting.
+  
+  ```typescript
+  tokenUsage: {
+    inputTokens: 999,
+    outputTokens: 999,
+  }
+  ```
+</ParamField>
+
+### Generic Failures
+
+<ParamField path="fail" type="number">
+  Probability of generic generation failure (0-1).
+  
+  ```typescript
+  fail: 0.1 // 10% chance
+  ```
+  
+  Throws: `CruelAPIError` with `statusCode: 500`
+</ParamField>
+
+### Event Monitoring
+
+<ParamField path="onChaos" type="(event: ChaosEvent) => void">
+  Callback fired when chaos is injected.
+  
+  ```typescript
+  onChaos: (event) => {
+    console.log(`[${event.modelId}] ${event.type}`, event)
+  }
+  ```
+  
+  See [ChaosEvent types](/ai-sdk/overview#chaos-events)
+</ParamField>
+
+## Streaming Example
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4'), {
+  slowTokens: [20, 80],
+  streamCut: 0.1,
+  corruptChunks: 0.02,
+  onChaos: (event) => {
+    if (event.type === 'slowTokens') {
+      console.log(`Token delay: ${event.ms}ms`)
+    }
+  },
+})
+
+const result = streamText({
+  model,
+  prompt: 'Write a haiku about testing',
+})
+
+try {
+  for await (const chunk of result.textStream) {
+    process.stdout.write(chunk)
+  }
+} catch (error) {
+  console.error('Stream error:', error.message)
+}
+```
+
+## Other Model Types
+
+Cruel provides specialized wrappers for all AI SDK model types:
+
+### Embedding Models
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { embed } from 'ai'
+import { cruelEmbeddingModel } from 'cruel/ai-sdk'
+
+const model = cruelEmbeddingModel(openai.embedding('text-embedding-3-small'), {
+  rateLimit: 0.1,
+  delay: [50, 150],
+})
+
+const result = await embed({
+  model,
+  value: 'Hello world',
+})
+```
+
+### Image Models
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { experimental_generateImage } from 'ai'
+import { cruelImageModel } from 'cruel/ai-sdk'
+
+const model = cruelImageModel(openai.image('dall-e-3'), {
+  overloaded: 0.2,
+  delay: [1000, 3000],
+})
+
+const result = await experimental_generateImage({
+  model,
+  prompt: 'A sunset over mountains',
+})
+```
+
+### Speech Models
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { experimental_generateSpeech } from 'ai'
+import { cruelSpeechModel } from 'cruel/ai-sdk'
+
+const model = cruelSpeechModel(openai.speech('tts-1'), {
+  rateLimit: 0.15,
+  delay: [500, 1500],
+})
+
+const result = await experimental_generateSpeech({
+  model,
+  text: 'Hello from Cruel',
+})
+```
+
+### Transcription Models
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { experimental_transcribe } from 'ai'
+import { cruelTranscriptionModel } from 'cruel/ai-sdk'
+
+const model = cruelTranscriptionModel(openai.transcription('whisper-1'), {
+  overloaded: 0.1,
+  delay: [200, 800],
+})
+
+const result = await experimental_transcribe({
+  model,
+  audio: audioBuffer,
+})
+```
+
+### Video Models
+
+```typescript
+import { cruelVideoModel } from 'cruel/ai-sdk'
+
+const model = cruelVideoModel(someProvider.video('video-model'), {
+  delay: [2000, 5000],
+  overloaded: 0.3,
+})
+```
+
+<Note>
+  Embedding, Image, Speech, Transcription, and Video models support a subset of chaos options:
+  `rateLimit`, `overloaded`, `invalidApiKey`, `quotaExceeded`, `delay`, `timeout`, and `fail`.
+  
+  Streaming-specific options like `streamCut` and `slowTokens` only apply to language models.
+</Note>
+
+## Model ID Override
+
+Cruel respects the `MODEL` environment variable for testing different models:
+
+```bash
+# Override model in wrapped instances
+MODEL=gpt-3.5-turbo npm test
+```
+
+```typescript
+// Original: openai('gpt-4')
+// With MODEL=gpt-3.5-turbo: openai('gpt-3.5-turbo')
+const model = cruelModel(openai('gpt-4'), { rateLimit: 0.1 })
+```
+
+For provider syntax:
+```bash
+# Override just the model name, keep provider
+MODEL=gpt-3.5-turbo npm test
+```
+
+```typescript
+// Original: gateway('openai/gpt-4')
+// With MODEL=gpt-3.5-turbo: gateway('openai/gpt-3.5-turbo')
+const model = cruelModel(gateway('openai/gpt-4'), { rateLimit: 0.1 })
+```
+
+## Error Types
+
+All errors thrown by `cruelModel` are instances of `CruelAPIError`:
+
+```typescript
+import { CruelAPIError } from 'cruel/ai-sdk'
+
+try {
+  const result = await generateText({ model, prompt: 'Hello' })
+} catch (error) {
+  if (error instanceof CruelAPIError) {
+    console.log('Status:', error.statusCode)      // HTTP status code
+    console.log('Retryable:', error.isRetryable)  // Can AI SDK retry?
+    console.log('Message:', error.message)        // Error description
+    console.log('Data:', error.data)              // Additional data (e.g., retryAfter)
+  }
+}
+```
+
+See [CruelAPIError source](https://github.com/vercel/ai/tree/main/packages/cruel/src/errors.ts#L4-L34) for implementation details.
+
+## TypeScript
+
+`cruelModel` preserves the exact type of the wrapped model:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import type { LanguageModelV3 } from 'cruel/ai-sdk'
+
+const original = openai('gpt-4')
+const wrapped = cruelModel(original, { rateLimit: 0.1 })
+
+// Both have identical types
+type Original = typeof original  // LanguageModelV3
+type Wrapped = typeof wrapped    // LanguageModelV3
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Provider Wrapping" icon="layer-group" href="/ai-sdk/providers">
+    Apply chaos at the provider level
+  </Card>
+  <Card title="Middleware" icon="filter" href="/ai-sdk/middleware">
+    Use AI SDK middleware for chaos
+  </Card>
+  <Card title="Tool Chaos" icon="wrench" href="/ai-sdk/tools">
+    Inject failures into tools
+  </Card>
+  <Card title="Presets" icon="sliders" href="/ai-sdk/presets">
+    Use built-in presets
+  </Card>
+</CardGroup>

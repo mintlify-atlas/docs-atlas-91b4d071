@@ -1,0 +1,270 @@
+---
+title: Circuit Breaker
+description: Prevent cascading failures by stopping requests when a service is unhealthy
+---
+
+## Overview
+
+The Circuit Breaker pattern prevents cascading failures by monitoring function errors and "opening" the circuit when a failure threshold is reached. This gives failing services time to recover while preventing resource exhaustion.
+
+## When to Use
+
+- Calling external APIs or microservices that may fail
+- Protecting against cascading failures in distributed systems
+- Preventing resource exhaustion from repeated failed requests
+- Services that need time to recover from overload
+
+## How It Works
+
+The circuit breaker has three states:
+
+<Steps>
+  <Step title="Closed (Normal)">
+    All requests pass through. Failures are counted.
+  </Step>
+  <Step title="Open (Blocking)">
+    When failures reach the threshold, the circuit opens and all requests fail immediately with `CRUEL_CIRCUIT_OPEN`.
+  </Step>
+  <Step title="Half-Open (Testing)">
+    After the timeout period, one request is allowed through to test if the service has recovered.
+  </Step>
+</Steps>
+
+## API Reference
+
+### Function Signature
+
+```typescript
+function createCircuitBreaker<T extends AnyFn>(
+  fn: T,
+  options: CircuitBreakerOptions
+): T & { getState: () => CircuitBreakerState; reset: () => void }
+```
+
+### Options
+
+<ParamField path="threshold" type="number" required>
+  Number of consecutive failures before opening the circuit. Must be at least 1.
+</ParamField>
+
+<ParamField path="timeout" type="number" required>
+  Time in milliseconds to wait before attempting to close the circuit. Must be at least 1.
+</ParamField>
+
+<ParamField path="onOpen" type="() => void">
+  Callback function executed when the circuit opens.
+</ParamField>
+
+<ParamField path="onClose" type="() => void">
+  Callback function executed when the circuit closes after recovery.
+</ParamField>
+
+<ParamField path="onHalfOpen" type="() => void">
+  Callback function executed when the circuit enters half-open state.
+</ParamField>
+
+### Return Type
+
+Returns the wrapped function with additional methods:
+
+<ParamField path="getState" type="() => CircuitBreakerState">
+  Returns the current circuit breaker state including:
+  - `failures`: Number of consecutive failures
+  - `state`: Current state ("closed" | "open" | "half-open")
+  - `lastFailure`: Timestamp of the last failure
+</ParamField>
+
+<ParamField path="reset" type="() => void">
+  Manually reset the circuit breaker to closed state with zero failures.
+</ParamField>
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { createCircuitBreaker } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  const response = await fetch(`https://api.example.com/users/${id}`)
+  return response.json()
+}
+
+const protectedFetch = createCircuitBreaker(fetchUser, {
+  threshold: 5,      // Open after 5 failures
+  timeout: 30000,    // Try again after 30 seconds
+  onOpen: () => console.log('Circuit opened - service is down'),
+  onClose: () => console.log('Circuit closed - service recovered'),
+})
+
+// Use it like the original function
+try {
+  const user = await protectedFetch('123')
+} catch (error) {
+  if (error.code === 'CRUEL_CIRCUIT_OPEN') {
+    console.log('Service unavailable, circuit is open')
+  }
+}
+```
+
+### Monitoring Circuit State
+
+```typescript
+const protectedFetch = createCircuitBreaker(fetchUser, {
+  threshold: 3,
+  timeout: 10000,
+})
+
+// Check current state
+const state = protectedFetch.getState()
+console.log(`State: ${state.state}, Failures: ${state.failures}`)
+
+// Manually reset if needed
+if (state.state === 'open') {
+  console.log('Manually resetting circuit breaker')
+  protectedFetch.reset()
+}
+```
+
+### With State Callbacks
+
+```typescript
+let isServiceHealthy = true
+
+const apiCall = createCircuitBreaker(fetchData, {
+  threshold: 5,
+  timeout: 60000,
+  onOpen: () => {
+    isServiceHealthy = false
+    // Trigger alerts, switch to fallback service, etc.
+    sendAlert('API service is down')
+  },
+  onHalfOpen: () => {
+    console.log('Testing if service has recovered...')
+  },
+  onClose: () => {
+    isServiceHealthy = true
+    console.log('Service recovered successfully')
+  },
+})
+```
+
+### Database Connection Example
+
+```typescript
+const queryDatabase = async (query: string) => {
+  const connection = await pool.getConnection()
+  try {
+    return await connection.query(query)
+  } finally {
+    connection.release()
+  }
+}
+
+const protectedQuery = createCircuitBreaker(queryDatabase, {
+  threshold: 10,     // Allow 10 failures before opening
+  timeout: 5000,     // Try to reconnect after 5 seconds
+  onOpen: () => {
+    console.error('Database connection circuit opened')
+    metrics.increment('circuit_breaker.database.open')
+  },
+})
+```
+
+## Combining with Other Patterns
+
+### Circuit Breaker + Retry
+
+```typescript
+import { createCircuitBreaker, withRetry } from 'cruel'
+
+// First wrap with retry, then circuit breaker
+const resilientFetch = createCircuitBreaker(
+  withRetry(fetchData, {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+  }),
+  {
+    threshold: 5,
+    timeout: 30000,
+  }
+)
+```
+
+### Circuit Breaker + Fallback
+
+```typescript
+import { createCircuitBreaker, withFallback } from 'cruel'
+
+const getConfig = async () => {
+  return fetch('https://api.example.com/config').then(r => r.json())
+}
+
+const resilientConfig = withFallback(
+  createCircuitBreaker(getConfig, {
+    threshold: 3,
+    timeout: 60000,
+  }),
+  {
+    fallback: { mode: 'safe', features: [] },
+    onFallback: (error) => {
+      console.log('Using fallback config:', error.message)
+    },
+  }
+)
+```
+
+### With Compose
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientAPI = cruel.compose(fetchData, {
+  circuitBreaker: {
+    threshold: 5,
+    timeout: 30000,
+  },
+  retry: {
+    attempts: 3,
+    backoff: 'exponential',
+  },
+  timeoutMs: 5000,
+})
+```
+
+## Error Handling
+
+The circuit breaker throws `CruelError` with code `CRUEL_CIRCUIT_OPEN` when the circuit is open:
+
+```typescript
+import { CruelError } from 'cruel'
+
+try {
+  await protectedFetch()
+} catch (error) {
+  if (error instanceof CruelError && error.code === 'CRUEL_CIRCUIT_OPEN') {
+    // Circuit is open - service is down
+    return fallbackResponse
+  }
+  throw error
+}
+```
+
+## Best Practices
+
+- **Choose appropriate thresholds**: Too low and you'll open prematurely, too high and you'll let too many failures through
+- **Set reasonable timeouts**: Give the service enough time to recover, but not so long that users wait indefinitely
+- **Monitor circuit state**: Use callbacks to track when circuits open/close for observability
+- **Combine with retries**: Use retries for transient failures, circuit breakers for sustained issues
+- **Use fallbacks**: Provide graceful degradation when the circuit is open
+- **Test recovery**: Ensure your service can actually recover when the circuit closes
+
+## Configuration Tips
+
+| Scenario | Threshold | Timeout | Reasoning |
+|----------|-----------|---------|------------|
+| External API | 5-10 | 30-60s | APIs may have rate limits or temporary issues |
+| Database | 3-5 | 5-10s | Database issues often resolve quickly or need intervention |
+| Microservice | 10-20 | 10-30s | Internal services may have higher tolerance |
+| Critical service | 2-3 | 60s+ | Fail fast and give more recovery time |

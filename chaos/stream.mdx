@@ -1,0 +1,373 @@
+---
+title: 'Stream Chaos'
+description: 'Simulate streaming failures, corruption, pauses, and truncation'
+---
+
+# Stream Chaos
+
+Stream chaos methods simulate issues that occur during data streaming, including cuts, pauses, corruption, and data integrity problems.
+
+## cut
+
+Abruptly terminates a stream mid-transfer.
+
+```typescript
+cruel.stream.cut(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The streaming function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of stream cut (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const streamVideo = async (url: string) => {
+  const response = await fetch(url)
+  return response.text()
+}
+
+// 15% chance of stream being cut
+const unreliableStream = cruel.stream.cut(streamVideo, 0.15)
+
+try {
+  const data = await unreliableStream('/video/stream')
+  console.log('Stream completed')
+} catch (error) {
+  // CruelError: stream cut mid-transfer
+  console.error('Stream interrupted:', error.message)
+}
+```
+
+<Note>
+  Stream cuts happen *after* the function executes but before returning the result, simulating connection loss during transfer.
+</Note>
+
+---
+
+## pause
+
+Adds pauses/delays during streaming.
+
+```typescript
+cruel.stream.pause(fn, ms)
+```
+
+<ParamField path="fn" type="function" required>
+  The streaming function to wrap
+</ParamField>
+
+<ParamField path="ms" type="number | [number, number]" default="[500, 2000]">
+  Pause duration in milliseconds. Can be fixed or range `[min, max]`
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Fixed Pause
+import { cruel } from 'cruel'
+
+const downloadChunk = async (offset: number) => {
+  return fetch(`/api/download?offset=${offset}`).then(r => r.text())
+}
+
+// Add 1 second pause after each chunk
+const pausedDownload = cruel.stream.pause(downloadChunk, 1000)
+
+const chunk = await pausedDownload(0)
+// Returns after original time + 1000ms pause
+```
+
+```typescript Variable Pause
+// Random pause between 500ms and 3000ms
+const variablePause = cruel.stream.pause(downloadChunk, [500, 3000])
+
+const chunk = await variablePause(0)
+// Each chunk has different pause duration
+```
+</CodeGroup>
+
+---
+
+## corrupt
+
+Corrupts data in the stream.
+
+```typescript
+cruel.stream.corrupt(fn, rate)
+```
+
+<ParamField path="fn" type="AsyncFn<string>" required>
+  Function returning string data to corrupt
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of corruption (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const fetchJSON = async (url: string): Promise<string> => {
+  const response = await fetch(url)
+  return response.text()
+}
+
+// 20% chance of data corruption
+const corruptedFetch = cruel.stream.corrupt(fetchJSON, 0.2)
+
+const data = await corruptedFetch('/api/data')
+// Data may contain corrupted bytes (�)
+
+try {
+  JSON.parse(data)
+} catch (error) {
+  console.error('Corrupted data received')
+}
+```
+
+<Note>
+  Corruption inserts the replacement character `�` at a random position in the string.
+</Note>
+
+---
+
+## truncate
+
+Truncates stream data at a random point.
+
+```typescript
+cruel.stream.truncate(fn, rate)
+```
+
+<ParamField path="fn" type="AsyncFn<string>" required>
+  Function returning string data to truncate
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of truncation (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const downloadFile = async (path: string): Promise<string> => {
+  const response = await fetch(`/files/${path}`)
+  return response.text()
+}
+
+// 10% chance of incomplete download
+const truncatedDownload = cruel.stream.truncate(downloadFile, 0.1)
+
+const content = await truncatedDownload('document.txt')
+// Content may be cut off at ~80% of original length
+```
+
+<Note>
+  Truncation occurs at a random point between 0% and 80% of the original content length.
+</Note>
+
+---
+
+## slow
+
+Creates a slow stream with long pauses.
+
+```typescript
+cruel.stream.slow(fn)
+```
+
+<ParamField path="fn" type="function" required>
+  The streaming function to wrap
+</ParamField>
+
+### Behavior
+
+Applies a random pause between 1000-5000ms.
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const streamData = async () => {
+  return fetch('/api/stream').then(r => r.text())
+}
+
+// Slow streaming with 1-5 second pauses
+const slowStream = cruel.stream.slow(streamData)
+
+const data = await slowStream()
+// Takes 1-5 seconds longer than normal
+```
+
+---
+
+## flaky
+
+Combines stream cuts and pauses for realistic flaky streaming.
+
+```typescript
+cruel.stream.flaky(fn)
+```
+
+<ParamField path="fn" type="function" required>
+  The streaming function to wrap
+</ParamField>
+
+### Behavior
+
+Applies:
+- 10% stream cut rate
+- 100-1000ms random pauses
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const liveStream = async (channel: string) => {
+  return websocket.connect(`/stream/${channel}`)
+}
+
+// Simulate unreliable streaming connection
+const flakyLiveStream = cruel.stream.flaky(liveStream)
+
+try {
+  const stream = await flakyLiveStream('channel-1')
+  console.log('Stream connected')
+} catch (error) {
+  if (error.code === 'CRUEL_STREAM_CUT') {
+    console.log('Stream was interrupted')
+  }
+}
+```
+
+---
+
+## Advanced Stream Methods
+
+The following methods are also available for more specific stream chaos:
+
+### reorder
+
+Reorders stream data by swapping halves.
+
+```typescript
+cruel.stream.reorder(fn, rate)
+```
+
+### duplicate
+
+Duplicates portions of stream data.
+
+```typescript
+cruel.stream.duplicate(fn, rate)
+```
+
+### dropChunks
+
+Drops chunks of data from the stream.
+
+```typescript
+cruel.stream.dropChunks(fn, rate)
+```
+
+### corruptChunks
+
+Alias for `corrupt` method.
+
+```typescript
+cruel.stream.corruptChunks(fn, rate)
+```
+
+---
+
+## Combining Stream Chaos
+
+```typescript
+import { cruel } from 'cruel'
+
+const streamData = async () => { /* ... */ }
+
+// Combine multiple stream issues
+let chaotic = streamData
+chaotic = cruel.stream.cut(chaotic, 0.05)
+chaotic = cruel.stream.pause(chaotic, [100, 500])
+chaotic = cruel.stream.corrupt(chaotic, 0.1)
+
+await chaotic()
+```
+
+## Real-World Scenarios
+
+<Tabs>
+  <Tab title="Video Streaming">
+    ```typescript
+    // Simulate buffering and interruptions
+    const videoStream = cruel.stream.flaky(
+      cruel.stream.pause(streamVideo, [1000, 3000])
+    )
+    ```
+  </Tab>
+  
+  <Tab title="File Upload">
+    ```typescript
+    // Unreliable upload with potential cuts
+    const flakyUpload = cruel.stream.cut(
+      cruel.stream.slow(uploadFile),
+      0.15
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Data Sync">
+    ```typescript
+    // Sync with potential data corruption
+    const corruptedSync = cruel.stream.corrupt(
+      cruel.stream.truncate(syncData, 0.05),
+      0.08
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Testing Stream Resilience
+
+```typescript
+import { cruel } from 'cruel'
+
+const downloadWithRetry = async (url: string, maxRetries = 3) => {
+  let attempt = 0
+  
+  while (attempt < maxRetries) {
+    try {
+      const flakyDownload = cruel.stream.flaky(fetch)
+      return await flakyDownload(url)
+    } catch (error) {
+      attempt++
+      if (error.code === 'CRUEL_STREAM_CUT') {
+        console.log(`Stream cut, retry ${attempt}/${maxRetries}`)
+      } else {
+        throw error
+      }
+    }
+  }
+  
+  throw new Error('Max retries exceeded')
+}
+```
+
+## Source Reference
+
+Stream methods are defined in `index.ts:429-525`.

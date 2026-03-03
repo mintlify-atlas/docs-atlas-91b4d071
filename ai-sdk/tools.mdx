@@ -1,0 +1,500 @@
+---
+title: Tool Chaos
+description: Inject failures into AI tool execution
+---
+
+Cruel provides `cruelTool()` and `cruelTools()` to simulate tool execution failures, timeouts, and delays when using AI SDK tools.
+
+## API Reference
+
+### cruelTool
+
+```typescript
+function cruelTool<T extends { execute: (...args: any[]) => any }>(
+  tool: T,
+  options?: CruelChaosOptions
+): WrappedTool<T>
+```
+
+<ParamField path="tool" type="{ execute: Function }" required>
+  Any object with an `execute` function. Works with AI SDK `tool()` and custom tools.
+</ParamField>
+
+<ParamField path="options" type="CruelChaosOptions">
+  Chaos options:
+  - `toolFailure` - Probability of tool execution failure (0-1)
+  - `toolTimeout` - Probability of tool timeout (0-1)
+  - `delay` - Add latency before tool execution
+  - `onChaos` - Monitor chaos events
+</ParamField>
+
+<ResponseField name="return" type="WrappedTool<T>">
+  Returns wrapped tool with async `execute` function.
+</ResponseField>
+
+### cruelTools
+
+```typescript
+function cruelTools<T extends Record<string, unknown>>(
+  tools: T,
+  options?: CruelChaosOptions
+): WrappedTools<T>
+```
+
+<ParamField path="tools" type="Record<string, Tool>" required>
+  Object of tools (typically from AI SDK's `tools` parameter).
+</ParamField>
+
+<ParamField path="options" type="CruelChaosOptions">
+  Same chaos options applied to all tools.
+</ParamField>
+
+<ResponseField name="return" type="WrappedTools<T>">
+  Returns object with all tools wrapped.
+</ResponseField>
+
+## Basic Usage
+
+<CodeGroup>
+```typescript Single Tool
+import { tool } from 'ai'
+import { cruelTool } from 'cruel/ai-sdk'
+import { z } from 'zod'
+
+const weatherTool = tool({
+  description: 'Get weather',
+  inputSchema: z.object({ city: z.string() }),
+  execute: async ({ city }) => {
+    return `${city}: 22C, sunny`
+  },
+})
+
+const chaosTool = cruelTool(weatherTool, {
+  toolFailure: 0.2,   // 20% chance of failure
+  delay: [100, 300],  // 100-300ms delay
+})
+
+// Use in generateText
+import { generateText, openai } from 'ai'
+
+const result = await generateText({
+  model: openai('gpt-4'),
+  tools: { weather: chaosTool },
+  prompt: 'What is the weather in Berlin?',
+})
+```
+
+```typescript Multiple Tools
+import { tool } from 'ai'
+import { cruelTools } from 'cruel/ai-sdk'
+import { z } from 'zod'
+
+const tools = cruelTools(
+  {
+    weather: tool({
+      description: 'Get weather',
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ city }) => `${city}: 22C`,
+    }),
+    
+    time: tool({
+      description: 'Get time',
+      inputSchema: z.object({ timezone: z.string() }),
+      execute: async ({ timezone }) => new Date().toLocaleString(),
+    }),
+  },
+  {
+    toolFailure: 0.15,
+    toolTimeout: 0.05,
+    delay: [50, 150],
+  }
+)
+
+const result = await generateText({
+  model: openai('gpt-4'),
+  tools,
+  prompt: 'What time is it in Tokyo and what is the weather?',
+})
+```
+
+```typescript With Monitoring
+import { cruelTools } from 'cruel/ai-sdk'
+
+const tools = cruelTools(myTools, {
+  toolFailure: 0.2,
+  toolTimeout: 0.1,
+  
+  onChaos: (event) => {
+    if (event.type === 'toolFailure') {
+      console.error('Tool execution failed!')
+    }
+    if (event.type === 'toolTimeout') {
+      console.error('Tool timed out!')
+    }
+  },
+})
+```
+</CodeGroup>
+
+## Tool Chaos Options
+
+<ParamField path="toolFailure" type="number">
+  Probability that tool execution throws an error (0-1).
+  
+  ```typescript
+  cruelTool(tool, { toolFailure: 0.2 })  // 20% failure rate
+  ```
+  
+  Throws: `Error('Tool execution failed')`
+</ParamField>
+
+<ParamField path="toolTimeout" type="number">
+  Probability that tool execution never completes (0-1).
+  
+  ```typescript
+  cruelTool(tool, { toolTimeout: 0.1 })  // 10% timeout rate
+  ```
+  
+  Hangs indefinitely (simulates timeout)
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]">
+  Add latency before tool execution.
+  
+  ```typescript
+  // Fixed delay
+  delay: 500  // Always 500ms
+  
+  // Random delay
+  delay: [100, 1000]  // 100-1000ms
+  ```
+</ParamField>
+
+<ParamField path="onChaos" type="(event: ChaosEvent) => void">
+  Callback when chaos is injected.
+  
+  ```typescript
+  onChaos: (event) => {
+    console.log('Tool chaos:', event.type)
+  }
+  ```
+  
+  Events: `toolFailure`, `toolTimeout`
+</ParamField>
+
+<Note>
+  Tool chaos options (`toolFailure`, `toolTimeout`) work with `cruelTool` and `cruelTools`.
+  
+  When used with `cruelModel`, `cruelProvider`, or `cruelMiddleware`, these options don't affect the model wrapper — they're only for tool wrapping.
+</Note>
+
+## How It Works
+
+```typescript
+// Simplified implementation
+function cruelTool(tool, options) {
+  return {
+    ...tool,
+    execute: async (...args) => {
+      // Check for failure
+      if (chance(options.toolFailure)) {
+        options.onChaos?.({ type: 'toolFailure' })
+        throw new Error('Tool execution failed')
+      }
+      
+      // Check for timeout
+      if (chance(options.toolTimeout)) {
+        options.onChaos?.({ type: 'toolTimeout' })
+        await new Promise(() => {})  // Never resolves
+      }
+      
+      // Add delay
+      const ms = getDelay(options.delay)
+      if (ms > 0) await sleep(ms)
+      
+      // Execute original
+      return tool.execute(...args)
+    },
+  }
+}
+```
+
+See [ai-sdk.ts:495-516](https://github.com/vercel/ai/tree/main/packages/cruel/src/ai-sdk.ts#L495-L516) for implementation.
+
+## Combining with Model Chaos
+
+You can combine tool chaos with model chaos:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText, tool } from 'ai'
+import { cruelModel, cruelTools } from 'cruel/ai-sdk'
+import { z } from 'zod'
+
+// Chaos at model level
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.15,
+  delay: [100, 300],
+})
+
+// Chaos at tool level
+const tools = cruelTools(
+  {
+    weather: tool({
+      description: 'Get weather',
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ city }) => `${city}: 22C`,
+    }),
+  },
+  {
+    toolFailure: 0.2,
+    delay: [50, 150],
+  }
+)
+
+const result = await generateText({
+  model,
+  tools,
+  prompt: 'What is the weather in Paris?',
+  maxRetries: 3,
+})
+
+// Now you test:
+// 1. Model failures (rate limits, etc.)
+// 2. Tool failures (execution errors)
+// 3. Combined scenarios
+```
+
+## Real-World Example
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText, tool } from 'ai'
+import { cruelModel, cruelTools, presets } from 'cruel/ai-sdk'
+import { z } from 'zod'
+
+// Simulate realistic failures
+const model = cruelModel(openai('gpt-4'), presets.unstable)
+
+const tools = cruelTools(
+  {
+    database: tool({
+      description: 'Query database',
+      inputSchema: z.object({ query: z.string() }),
+      execute: async ({ query }) => {
+        // Actual database call
+        return await db.query(query)
+      },
+    }),
+    
+    api: tool({
+      description: 'Call external API',
+      inputSchema: z.object({ endpoint: z.string() }),
+      execute: async ({ endpoint }) => {
+        // Actual API call
+        return await fetch(`https://api.example.com/${endpoint}`)
+      },
+    }),
+  },
+  {
+    toolFailure: 0.15,   // 15% failure (network issues, etc.)
+    toolTimeout: 0.05,   // 5% timeout
+    delay: [100, 500],   // Network latency
+    
+    onChaos: (event) => {
+      console.error(`Tool ${event.type} detected`)
+      sendAlert(`Tool chaos: ${event.type}`)
+    },
+  }
+)
+
+try {
+  const result = await generateText({
+    model,
+    tools,
+    prompt: 'Get user data from database and enrich with API',
+    maxRetries: 3,
+  })
+  
+  console.log('Success:', result.text)
+} catch (error) {
+  console.error('Failed after retries:', error)
+}
+```
+
+## Monitoring Tool Failures
+
+```typescript
+import { cruelTools } from 'cruel/ai-sdk'
+
+let toolCalls = 0
+let toolFailures = 0
+let toolTimeouts = 0
+
+const tools = cruelTools(myTools, {
+  toolFailure: 0.2,
+  toolTimeout: 0.1,
+  
+  onChaos: (event) => {
+    if (event.type === 'toolFailure') {
+      toolFailures++
+    }
+    if (event.type === 'toolTimeout') {
+      toolTimeouts++
+    }
+  },
+})
+
+// Wrap tool execution to count calls
+for (const [name, tool] of Object.entries(tools)) {
+  const original = tool.execute
+  tool.execute = async (...args) => {
+    toolCalls++
+    return original(...args)
+  }
+}
+
+// Run tests
+await runTestSuite(tools)
+
+console.log(`Tool calls: ${toolCalls}`)
+console.log(`Failures: ${toolFailures} (${(toolFailures/toolCalls*100).toFixed(1)}%)`)
+console.log(`Timeouts: ${toolTimeouts} (${(toolTimeouts/toolCalls*100).toFixed(1)}%)`)
+```
+
+## With Presets
+
+Built-in presets include tool chaos:
+
+```typescript
+import { cruelTools, presets } from 'cruel/ai-sdk'
+
+// presets.nightmare includes:
+// - toolFailure: 0.1
+// - toolTimeout: 0
+
+// presets.apocalypse includes:
+// - toolFailure: 0.2
+// - toolTimeout: 0.1
+
+const tools = cruelTools(myTools, {
+  ...presets.nightmare,
+  onChaos: (event) => console.log(event.type),
+})
+```
+
+See [Presets](/ai-sdk/presets) for details.
+
+## Testing Tool Resilience
+
+Use tool chaos to verify:
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="bug">
+    Does your app handle tool failures gracefully?
+    
+    ```typescript
+    toolFailure: 0.5  // 50% failure rate
+    ```
+  </Card>
+  
+  <Card title="Timeout Handling" icon="clock">
+    Does your app timeout tools properly?
+    
+    ```typescript
+    toolTimeout: 0.3  // 30% timeout rate
+    ```
+  </Card>
+  
+  <Card title="Retry Logic" icon="rotate">
+    Do retries work for failed tools?
+    
+    ```typescript
+    maxRetries: 3
+    toolFailure: 0.3
+    ```
+  </Card>
+  
+  <Card title="Fallback Strategies" icon="route">
+    Do you fallback when tools fail?
+    
+    ```typescript
+    // Test fallback paths
+    toolFailure: 0.8
+    ```
+  </Card>
+</CardGroup>
+
+## Non-Tool Objects
+
+`cruelTool` works with any object that has an `execute` function:
+
+```typescript
+import { cruelTool } from 'cruel/ai-sdk'
+
+const customTool = {
+  name: 'calculator',
+  execute: async (a: number, b: number) => a + b,
+}
+
+const chaosTool = cruelTool(customTool, {
+  toolFailure: 0.1,
+  delay: [10, 50],
+})
+
+// Works!
+const result = await chaosTool.execute(2, 3)
+```
+
+If the object doesn't have `execute`, `cruelTool` returns it unchanged:
+
+```typescript
+const notATool = { foo: 'bar' }
+const wrapped = cruelTool(notATool, { toolFailure: 0.1 })
+// wrapped === notATool (unchanged)
+```
+
+## TypeScript
+
+```typescript
+import type { CruelChaosOptions } from 'cruel/ai-sdk'
+import { cruelTool, cruelTools } from 'cruel/ai-sdk'
+
+type MyTool = {
+  execute: (arg: string) => Promise<number>
+}
+
+const tool: MyTool = {
+  execute: async (arg) => arg.length,
+}
+
+// Type-safe wrapping
+const wrapped = cruelTool(tool, { toolFailure: 0.1 })
+// typeof wrapped.execute === (arg: string) => Promise<number>
+
+// Works with tool objects
+const tools = {
+  a: { execute: async () => 1 },
+  b: { execute: async () => 2 },
+  c: { notATool: true },  // Ignored
+}
+
+const wrappedTools = cruelTools(tools, { toolFailure: 0.1 })
+// wrappedTools.a.execute: () => Promise<number>
+// wrappedTools.b.execute: () => Promise<number>
+// wrappedTools.c: { notATool: true }
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Chaos" icon="box" href="/ai-sdk/models">
+    Learn about model-level chaos
+  </Card>
+  <Card title="Presets" icon="sliders" href="/ai-sdk/presets">
+    Use built-in chaos presets
+  </Card>
+  <Card title="Overview" icon="book" href="/ai-sdk/overview">
+    Back to AI SDK overview
+  </Card>
+</CardGroup>

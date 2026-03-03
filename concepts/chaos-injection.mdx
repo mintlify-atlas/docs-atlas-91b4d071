@@ -1,0 +1,321 @@
+---
+title: Chaos Injection
+description: Learn how to inject controlled chaos into your functions for resilience testing
+---
+
+## What is Chaos Injection?
+
+Chaos injection is the core concept of Cruel. It wraps your functions to randomly inject failures, delays, timeouts, and other chaos conditions based on probability rates. This helps you test how your application handles real-world failures.
+
+## Basic Usage
+
+The main `cruel()` function wraps any function and applies chaos options:
+
+```typescript
+import { cruel } from 'cruel'
+
+const unreliableFunction = cruel(myFunction, {
+  fail: 0.1,    // 10% chance of failure
+  delay: 500,   // 500ms delay
+  timeout: 0.05 // 5% chance of timeout
+})
+```
+
+## Chaos Options
+
+All chaos options use probability rates between 0 and 1, where:
+- `0` = never inject chaos
+- `1` = always inject chaos
+- `0.1` = 10% probability
+
+### fail
+
+Injects random failures by throwing a `CruelError`:
+
+```typescript
+const flaky = cruel(fetchData, { fail: 0.2 })
+
+try {
+  await flaky()
+} catch (error) {
+  if (error.name === 'CruelError') {
+    console.log('Injected failure:', error.code) // CRUEL_FAILURE
+  }
+}
+```
+
+<Note>
+  The `fail` option throws errors randomly based on the probability rate. Use this to test error handling logic.
+</Note>
+
+### delay
+
+Adds latency to function execution. Accepts a fixed number or a range:
+
+<CodeGroup>
+```typescript Fixed Delay
+const slow = cruel(process, { delay: 1000 })
+// Always adds 1000ms delay
+```
+
+```typescript Random Range
+const variable = cruel(process, { delay: [100, 500] })
+// Adds random delay between 100-500ms
+```
+</CodeGroup>
+
+### timeout
+
+Creates infinite timeouts that never resolve:
+
+```typescript
+const stuck = cruel(query, { timeout: 0.1 })
+
+// 10% chance this never resolves
+const result = await Promise.race([
+  stuck(),
+  new Promise((_, reject) => 
+    setTimeout(() => reject('Timeout'), 5000)
+  )
+])
+```
+
+<Warning>
+  Timeout chaos creates hanging promises that never resolve or reject. Always use timeout handlers in production.
+</Warning>
+
+### jitter
+
+Adds random variability on top of the delay:
+
+```typescript
+const jittery = cruel(request, {
+  delay: 1000,
+  jitter: 500  // Adds 0-500ms extra random delay
+})
+// Total delay will be between 1000-1500ms
+```
+
+### corrupt
+
+Corrupts string return values by injecting invalid characters:
+
+```typescript
+const corrupted = cruel(async () => "Hello World", { 
+  corrupt: 0.3 
+})
+
+const result = await corrupted()
+// 30% chance: "Hello �orld" (corrupted character)
+```
+
+### spike
+
+Creates occasional dramatic latency spikes:
+
+<CodeGroup>
+```typescript Fixed Spike
+const spiky = cruel(handler, {
+  delay: 100,
+  spike: 5000  // Occasional 5 second spike
+})
+```
+
+```typescript Random Spike
+const variable = cruel(handler, {
+  delay: 100,
+  spike: [2000, 10000]  // Spikes between 2-10 seconds
+})
+```
+</CodeGroup>
+
+## Combining Options
+
+All chaos options work together:
+
+```typescript
+const chaotic = cruel(criticalFunction, {
+  fail: 0.15,         // 15% failures
+  delay: [200, 2000], // 200-2000ms latency
+  timeout: 0.05,      // 5% timeouts
+  jitter: 500,        // Extra 0-500ms variance
+  corrupt: 0.1,       // 10% data corruption
+  spike: [1000, 5000] // Occasional 1-5s spikes
+})
+```
+
+## Convenience Wrappers
+
+Cruel provides pre-configured wrappers for common patterns:
+
+<Tabs>
+  <Tab title="fail()">
+    ```typescript
+    const flaky = cruel.fail(myFunction, 0.2)
+    // Equivalent to: cruel(myFunction, { fail: 0.2 })
+    ```
+  </Tab>
+  
+  <Tab title="slow()">
+    ```typescript
+    const slow = cruel.slow(myFunction, 1000)
+    // Equivalent to: cruel(myFunction, { delay: 1000 })
+    
+    const variable = cruel.slow(myFunction, [100, 500])
+    // Random delay between 100-500ms
+    ```
+  </Tab>
+  
+  <Tab title="timeout()">
+    ```typescript
+    const hanging = cruel.timeout(myFunction, 0.1)
+    // Equivalent to: cruel(myFunction, { timeout: 0.1 })
+    ```
+  </Tab>
+  
+  <Tab title="flaky()">
+    ```typescript
+    const unreliable = cruel.flaky(myFunction, 0.3)
+    // Combines fail, timeout, and delay based on intensity
+    ```
+  </Tab>
+</Tabs>
+
+## Pre-built Patterns
+
+### Unreliable
+
+Simulates a highly unreliable service:
+
+```typescript
+const unreliable = cruel.unreliable(fetchData)
+// fail: 0.3, timeout: 0.1, delay: [200, 2000], jitter: 500
+```
+
+### Nightmare
+
+Creates worst-case scenarios for stress testing:
+
+```typescript
+const nightmare = cruel.nightmare(processPayment)
+// fail: 0.5, timeout: 0.2, delay: [500, 5000], jitter: 1000
+```
+
+## Global Chaos
+
+Enable chaos globally for all wrapped functions:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Wrap functions
+const fn1 = cruel(function1)
+const fn2 = cruel(function2)
+
+// Enable chaos globally
+cruel.enable({ fail: 0.1, delay: [100, 500] })
+
+await fn1() // Has chaos
+await fn2() // Has chaos
+
+// Disable globally
+cruel.disable()
+```
+
+## Scoped Chaos
+
+Apply chaos only within a specific scope:
+
+```typescript
+await cruel.scope(async () => {
+  // Chaos only applies here
+  await fetchData()
+  await processData()
+}, { fail: 0.2, delay: 1000 })
+
+// No chaos here
+await fetchData()
+```
+
+## Fluent API
+
+Chain chaos methods for readable code:
+
+```typescript
+const wrapped = cruel.wrap(myFunction)
+  .fail(0.1)
+  .slow(500)
+  .timeout(0.05)
+
+// Or use custom options
+const custom = cruel.wrap(myFunction)
+  .with({ fail: 0.2, delay: [100, 1000], jitter: 200 })
+```
+
+## Statistics
+
+Track chaos injection statistics:
+
+```typescript
+const fn = cruel(myFunction, { fail: 0.1, delay: 500 })
+
+for (let i = 0; i < 100; i++) {
+  try {
+    await fn()
+  } catch (e) {
+    // Handle errors
+  }
+}
+
+const stats = cruel.stats()
+console.log(stats)
+// {
+//   calls: 100,
+//   failures: 11,
+//   timeouts: 0,
+//   delays: 100,
+//   corrupted: 0,
+//   p50: 501,  // 50th percentile latency
+//   p95: 505,  // 95th percentile
+//   p99: 507,  // 99th percentile
+//   avg: 502,  // Average latency
+// }
+```
+
+## Error Types
+
+Cruel provides specific error types for different chaos conditions:
+
+```typescript
+import { cruel } from 'cruel'
+
+const fn = cruel(myFunction, { fail: 0.5, timeout: 0.2 })
+
+try {
+  await fn()
+} catch (error) {
+  if (error.name === 'CruelError') {
+    console.log('General failure:', error.code)
+  }
+  if (error.name === 'CruelTimeoutError') {
+    console.log('Timeout injected:', error.code) // CRUEL_TIMEOUT
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Presets" icon="sliders" href="/concepts/presets">
+    Use pre-configured chaos profiles for different environments
+  </Card>
+  <Card title="Scenarios" icon="film" href="/concepts/scenarios">
+    Simulate real-world failure scenarios over time
+  </Card>
+  <Card title="Chaos Types" icon="wand-magic-sparkles" href="/chaos/network">
+    Explore domain-specific chaos injection (network, http, ai)
+  </Card>
+  <Card title="Resilience Patterns" icon="shield" href="/resilience/circuit-breaker">
+    Combine with circuit breakers and retries
+  </Card>
+</CardGroup>

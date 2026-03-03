@@ -1,0 +1,317 @@
+---
+title: "createCruel()"
+description: "Factory function for creating custom cruel instances with default options"
+---
+
+## Overview
+
+The `createCruel()` function creates a customized instance of cruel with default chaos options. This is useful when you want consistent behavior across multiple wrapped functions without repeating the same configuration.
+
+## Signature
+
+```typescript
+function createCruel(defaults?: ChaosOptions): CruelInstance
+```
+
+## Parameters
+
+<ParamField path="defaults" type="ChaosOptions">
+  Default chaos options that will be applied to all functions wrapped by this instance.
+  
+  <ParamField path="fail" type="number">
+    Default failure probability (0-1) for all wrapped functions.
+  </ParamField>
+  
+  <ParamField path="delay" type="number | [number, number]">
+    Default delay in milliseconds, or range `[min, max]`.
+  </ParamField>
+  
+  <ParamField path="timeout" type="number">
+    Default timeout probability (0-1).
+  </ParamField>
+  
+  <ParamField path="jitter" type="number">
+    Default maximum random jitter in milliseconds.
+  </ParamField>
+  
+  <ParamField path="corrupt" type="number">
+    Default corruption probability (0-1) for string responses.
+  </ParamField>
+  
+  <ParamField path="spike" type="number | [number, number]">
+    Default delay spike in milliseconds, or range.
+  </ParamField>
+  
+  <ParamField path="enabled" type="boolean">
+    Whether chaos is enabled by default for this instance.
+  </ParamField>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="instance" type="CruelInstance">
+  A cruel instance with pre-configured defaults. The instance has the same API as the main `cruel` object, including:
+  
+  - Main wrapper function: `instance(fn, options?)`
+  - Preset methods: `fail()`, `slow()`, `timeout()`, `flaky()`
+  - Specialized namespaces: `network`, `http`, `stream`, `ai`
+  
+  All methods merge the provided options with the instance defaults.
+</ResponseField>
+
+## Examples
+
+### Basic Instance Creation
+
+```typescript
+import { createCruel } from 'cruel'
+
+// Create instance with 5% failure rate and 100-300ms delay
+const testCruel = createCruel({
+  fail: 0.05,
+  delay: [100, 300]
+})
+
+// All wrapped functions inherit these defaults
+const api1 = testCruel(fetchUser)
+const api2 = testCruel(fetchPosts)
+const api3 = testCruel(updateProfile)
+```
+
+### Override Instance Defaults
+
+```typescript
+const testCruel = createCruel({
+  fail: 0.05,
+  delay: [100, 300]
+})
+
+// Override with higher failure rate for specific function
+const criticalApi = testCruel(deleteAccount, {
+  fail: 0.2,  // Overrides the 0.05 default
+  delay: [500, 1000]  // Overrides [100, 300]
+})
+```
+
+### Environment-Specific Instances
+
+```typescript
+import { createCruel } from 'cruel'
+
+const devCruel = createCruel({
+  fail: 0.01,
+  delay: [10, 50]
+})
+
+const stagingCruel = createCruel({
+  fail: 0.1,
+  delay: [100, 500],
+  timeout: 0.02
+})
+
+const testCruel = createCruel({
+  fail: 0.3,
+  delay: [500, 2000],
+  timeout: 0.1,
+  jitter: 500
+})
+
+// Use appropriate instance based on environment
+const cruel = process.env.NODE_ENV === 'production' 
+  ? devCruel 
+  : process.env.NODE_ENV === 'staging'
+  ? stagingCruel
+  : testCruel
+
+export const api = {
+  getUser: cruel(fetchUser),
+  getPosts: cruel(fetchPosts),
+  createPost: cruel(createPost)
+}
+```
+
+### Testing with Custom Instance
+
+```typescript
+import { createCruel } from 'cruel'
+import { describe, it, beforeEach, afterEach } from 'vitest'
+
+describe('API Resilience Tests', () => {
+  let testCruel: ReturnType<typeof createCruel>
+  
+  beforeEach(() => {
+    testCruel = createCruel({
+      fail: 0.5,  // 50% failure rate for thorough testing
+      delay: [100, 500]
+    })
+  })
+  
+  it('should handle API failures gracefully', async () => {
+    const unreliableApi = testCruel(apiCall)
+    
+    // Test retry logic
+    const result = await retry(() => unreliableApi(), { attempts: 3 })
+    expect(result).toBeDefined()
+  })
+  
+  it('should timeout appropriately', async () => {
+    const slowCruel = createCruel({
+      timeout: 0.8  // 80% timeout rate
+    })
+    
+    const slowApi = slowCruel(apiCall)
+    
+    await expect(
+      Promise.race([
+        slowApi(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 1000)
+        )
+      ])
+    ).rejects.toThrow('timeout')
+  })
+})
+```
+
+### Using Preset Methods with Custom Instance
+
+```typescript
+const testCruel = createCruel({
+  delay: [200, 400]  // Base delay for all methods
+})
+
+// Preset methods use instance defaults + their own defaults
+const flaky = testCruel.fail(apiCall)  // Uses instance delay + 10% failure
+const slow = testCruel.slow(apiCall)   // Uses instance delay + method delay
+const timeout = testCruel.timeout(apiCall)  // Uses instance delay + 10% timeout
+
+// Can still override
+const customFlaky = testCruel.fail(apiCall, 0.3)  // 30% failure rate
+```
+
+### Scoped Testing with Multiple Instances
+
+```typescript
+import { createCruel } from 'cruel'
+
+// Light chaos for unit tests
+const unitTestCruel = createCruel({
+  fail: 0.01,
+  delay: [5, 20]
+})
+
+// Heavy chaos for integration tests
+const integrationTestCruel = createCruel({
+  fail: 0.2,
+  delay: [100, 500],
+  timeout: 0.05,
+  jitter: 200
+})
+
+// Export appropriate instance for each test suite
+export const lightChaos = {
+  fetch: unitTestCruel(fetch),
+  db: unitTestCruel(dbQuery)
+}
+
+export const heavyChaos = {
+  fetch: integrationTestCruel(fetch),
+  db: integrationTestCruel(dbQuery)
+}
+```
+
+### Instance with Specialized Namespaces
+
+```typescript
+const networkCruel = createCruel({
+  delay: [1000, 3000]  // Slow network by default
+})
+
+// Instance has same specialized namespaces
+const api = {
+  // Network chaos with instance defaults
+  fetch: networkCruel.network.latency(fetchData, [2000, 5000]),
+  
+  // HTTP chaos with instance defaults  
+  post: networkCruel.http.serverError(postData, 0.1),
+  
+  // Stream chaos with instance defaults
+  stream: networkCruel.stream.cut(streamData, 0.05)
+}
+```
+
+## Use Cases
+
+### 1. Test Suites
+
+Create consistent chaos behavior across all tests in a suite:
+
+```typescript
+const suiteCruel = createCruel({ fail: 0.1, delay: [50, 150] })
+
+describe('User API', () => {
+  const api = {
+    get: suiteCruel(getUser),
+    create: suiteCruel(createUser),
+    update: suiteCruel(updateUser),
+    delete: suiteCruel(deleteUser)
+  }
+  
+  // All API calls share same chaos behavior
+})
+```
+
+### 2. Environment Profiles
+
+Different chaos levels for different environments:
+
+```typescript
+const profiles = {
+  dev: createCruel({ fail: 0.01 }),
+  staging: createCruel({ fail: 0.05, delay: [100, 300] }),
+  test: createCruel({ fail: 0.2, delay: [200, 800], timeout: 0.05 })
+}
+
+export const cruel = profiles[process.env.NODE_ENV] || profiles.dev
+```
+
+### 3. Feature Flags
+
+Enable/disable chaos per feature:
+
+```typescript
+const paymentCruel = createCruel({ 
+  fail: 0.1,
+  enabled: process.env.CHAOS_PAYMENTS === 'true'
+})
+
+const authCruel = createCruel({
+  fail: 0.05,
+  enabled: process.env.CHAOS_AUTH === 'true'
+})
+
+export const services = {
+  payment: paymentCruel(processPayment),
+  auth: authCruel(authenticate)
+}
+```
+
+## Instance Methods
+
+All instance methods accept the same parameters as their global counterparts:
+
+- `instance(fn, options?)` - Main wrapper with instance defaults
+- `instance.fail(fn, rate?)` - Failure injection
+- `instance.slow(fn, delay?)` - Delay injection  
+- `instance.timeout(fn, rate?)` - Timeout injection
+- `instance.flaky(fn, intensity?)` - Combined chaos
+- `instance.network.*` - Network chaos
+- `instance.http.*` - HTTP chaos
+- `instance.stream.*` - Stream chaos
+- `instance.ai.*` - AI chaos
+
+## Related Functions
+
+- [cruel()](/api/cruel) - Main cruel wrapper function
+- [cruel.wrap()](/api/wrap) - Fluent wrapping API
+- [cruel.compose()](/api/wrap#compose) - Compose resilience patterns

@@ -1,0 +1,505 @@
+---
+title: Presets
+description: Built-in chaos configurations for AI SDK testing
+---
+
+Cruel provides five ready-to-use chaos presets that simulate different levels of AI infrastructure stress. Use these to quickly test your application's resilience.
+
+## Available Presets
+
+```typescript
+import { presets } from 'cruel/ai-sdk'
+
+// Five levels of chaos
+presets.realistic     // Light chaos for development
+presets.unstable      // Medium chaos for CI/staging
+presets.harsh         // Heavy chaos for stress testing
+presets.nightmare     // Extreme chaos for resilience testing
+presets.apocalypse    // Maximum chaos for chaos engineering
+```
+
+## Preset Reference
+
+### realistic
+
+Light chaos that simulates normal production conditions.
+
+```typescript
+const realistic: CruelChaosOptions = {
+  rateLimit: 0.02,              // 2% rate limits
+  overloaded: 0.01,             // 1% overload
+  delay: [50, 200],             // 50-200ms latency
+  slowTokens: [20, 80],         // 20-80ms per token
+}
+```
+
+<ParamField path="rateLimit" type="0.02">
+  2% chance of rate limit errors
+</ParamField>
+<ParamField path="overloaded" type="0.01">
+  1% chance of model overload
+</ParamField>
+<ParamField path="delay" type="[50, 200]">
+  50-200ms latency before responses
+</ParamField>
+<ParamField path="slowTokens" type="[20, 80]">
+  20-80ms delay between streamed tokens
+</ParamField>
+
+**Use for:**
+- Development testing
+- Smoke tests
+- Verifying basic error handling
+
+### unstable
+
+Moderate chaos for staging environments.
+
+```typescript
+const unstable: CruelChaosOptions = {
+  rateLimit: 0.1,               // 10% rate limits
+  overloaded: 0.05,             // 5% overload
+  streamCut: 0.05,              // 5% stream interruptions
+  delay: [100, 500],            // 100-500ms latency
+  slowTokens: [50, 200],        // 50-200ms per token
+}
+```
+
+<ParamField path="rateLimit" type="0.1">
+  10% chance of rate limit errors
+</ParamField>
+<ParamField path="overloaded" type="0.05">
+  5% chance of model overload
+</ParamField>
+<ParamField path="streamCut" type="0.05">
+  5% chance of stream interruption
+</ParamField>
+<ParamField path="delay" type="[100, 500]">
+  100-500ms latency before responses
+</ParamField>
+<ParamField path="slowTokens" type="[50, 200]">
+  50-200ms delay between streamed tokens
+</ParamField>
+
+**Use for:**
+- CI/CD pipelines
+- Staging environment testing
+- Integration tests
+
+### harsh
+
+Heavy chaos for stress testing.
+
+```typescript
+const harsh: CruelChaosOptions = {
+  rateLimit: 0.2,               // 20% rate limits
+  overloaded: 0.1,              // 10% overload
+  streamCut: 0.1,               // 10% stream interruptions
+  contentFilter: 0.02,          // 2% content filter
+  delay: [200, 1000],           // 200-1000ms latency
+  slowTokens: [100, 500],       // 100-500ms per token
+}
+```
+
+<ParamField path="rateLimit" type="0.2">
+  20% chance of rate limit errors
+</ParamField>
+<ParamField path="overloaded" type="0.1">
+  10% chance of model overload
+</ParamField>
+<ParamField path="streamCut" type="0.1">
+  10% chance of stream interruption
+</ParamField>
+<ParamField path="contentFilter" type="0.02">
+  2% chance of content filter errors
+</ParamField>
+<ParamField path="delay" type="[200, 1000]">
+  200-1000ms latency before responses
+</ParamField>
+<ParamField path="slowTokens" type="[100, 500]">
+  100-500ms delay between streamed tokens
+</ParamField>
+
+**Use for:**
+- Stress testing
+- Load testing
+- Verifying retry logic
+
+### nightmare
+
+Extreme chaos for resilience testing.
+
+```typescript
+const nightmare: CruelChaosOptions = {
+  rateLimit: 0.3,               // 30% rate limits
+  overloaded: 0.15,             // 15% overload
+  streamCut: 0.15,              // 15% stream interruptions
+  contentFilter: 0.05,          // 5% content filter
+  contextLength: 0.05,          // 5% context length errors
+  partialResponse: 0.1,         // 10% partial responses
+  delay: [500, 2000],           // 500-2000ms latency
+  slowTokens: [200, 1000],      // 200-1000ms per token
+  toolFailure: 0.1,             // 10% tool failures
+}
+```
+
+<ParamField path="rateLimit" type="0.3">
+  30% chance of rate limit errors
+</ParamField>
+<ParamField path="overloaded" type="0.15">
+  15% chance of model overload
+</ParamField>
+<ParamField path="streamCut" type="0.15">
+  15% chance of stream interruption
+</ParamField>
+<ParamField path="contentFilter" type="0.05">
+  5% chance of content filter errors
+</ParamField>
+<ParamField path="contextLength" type="0.05">
+  5% chance of context length errors
+</ParamField>
+<ParamField path="partialResponse" type="0.1">
+  10% chance of truncated responses
+</ParamField>
+<ParamField path="delay" type="[500, 2000]">
+  500-2000ms latency before responses
+</ParamField>
+<ParamField path="slowTokens" type="[200, 1000]">
+  200-1000ms delay between streamed tokens
+</ParamField>
+<ParamField path="toolFailure" type="0.1">
+  10% chance of tool execution failure
+</ParamField>
+
+**Use for:**
+- Resilience testing
+- Chaos engineering
+- Finding edge cases
+
+### apocalypse
+
+Maximum chaos for extreme scenarios.
+
+```typescript
+const apocalypse: CruelChaosOptions = {
+  rateLimit: 0.4,               // 40% rate limits
+  overloaded: 0.2,              // 20% overload
+  streamCut: 0.2,               // 20% stream interruptions
+  contentFilter: 0.1,           // 10% content filter
+  contextLength: 0.1,           // 10% context length errors
+  modelUnavailable: 0.1,        // 10% model unavailable
+  partialResponse: 0.15,        // 15% partial responses
+  corruptChunks: 0.05,          // 5% corrupt chunks
+  delay: [1000, 5000],          // 1-5 second latency
+  slowTokens: [500, 2000],      // 0.5-2 second per token
+  toolFailure: 0.2,             // 20% tool failures
+  toolTimeout: 0.1,             // 10% tool timeouts
+}
+```
+
+<ParamField path="rateLimit" type="0.4">
+  40% chance of rate limit errors
+</ParamField>
+<ParamField path="overloaded" type="0.2">
+  20% chance of model overload
+</ParamField>
+<ParamField path="streamCut" type="0.2">
+  20% chance of stream interruption
+</ParamField>
+<ParamField path="contentFilter" type="0.1">
+  10% chance of content filter errors
+</ParamField>
+<ParamField path="contextLength" type="0.1">
+  10% chance of context length errors
+</ParamField>
+<ParamField path="modelUnavailable" type="0.1">
+  10% chance of model unavailable errors
+</ParamField>
+<ParamField path="partialResponse" type="0.15">
+  15% chance of truncated responses
+</ParamField>
+<ParamField path="corruptChunks" type="0.05">
+  5% chance of corrupt stream chunks
+</ParamField>
+<ParamField path="delay" type="[1000, 5000]">
+  1-5 second latency before responses
+</ParamField>
+<ParamField path="slowTokens" type="[500, 2000]">
+  0.5-2 second delay between streamed tokens
+</ParamField>
+<ParamField path="toolFailure" type="0.2">
+  20% chance of tool execution failure
+</ParamField>
+<ParamField path="toolTimeout" type="0.1">
+  10% chance of tool timeout
+</ParamField>
+
+**Use for:**
+- Maximum chaos testing
+- Breaking your app to find limits
+- Disaster recovery testing
+
+## Usage Examples
+
+<CodeGroup>
+```typescript cruelModel
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel, presets } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4'), presets.unstable)
+
+const result = await generateText({
+  model,
+  prompt: 'Hello',
+  maxRetries: 3,
+})
+```
+
+```typescript cruelProvider
+import { openai } from '@ai-sdk/openai'
+import { cruelProvider, presets } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, presets.harsh)
+
+const gpt4 = provider('gpt-4')
+const gpt35 = provider('gpt-3.5-turbo')
+```
+
+```typescript cruelMiddleware
+import { openai } from '@ai-sdk/openai'
+import { cruelMiddleware, presets } from 'cruel/ai-sdk'
+
+const model = openai('gpt-4', {
+  experimental_middleware: cruelMiddleware(presets.realistic),
+})
+```
+
+```typescript cruelTools
+import { cruelTools, presets } from 'cruel/ai-sdk'
+import { myTools } from './tools'
+
+const tools = cruelTools(myTools, presets.nightmare)
+```
+</CodeGroup>
+
+## Customizing Presets
+
+Override specific values while keeping preset defaults:
+
+```typescript
+import { cruelModel, presets } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+
+const model = cruelModel(openai('gpt-4'), {
+  ...presets.unstable,
+  
+  // Override rate limit
+  rateLimit: 0.3,
+  
+  // Add monitoring
+  onChaos: (event) => {
+    console.log('Chaos:', event.type)
+  },
+})
+```
+
+## Environment-Based Presets
+
+Select preset based on environment:
+
+```typescript
+import { cruelModel, presets } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+
+const CHAOS_PRESETS = {
+  development: presets.realistic,
+  staging: presets.unstable,
+  production: undefined,  // No chaos in prod
+} as const
+
+const env = process.env.NODE_ENV as keyof typeof CHAOS_PRESETS
+const preset = CHAOS_PRESETS[env]
+
+const model = preset
+  ? cruelModel(openai('gpt-4'), preset)
+  : openai('gpt-4')
+```
+
+## Combining Presets
+
+Merge multiple presets:
+
+```typescript
+import { presets } from 'cruel/ai-sdk'
+
+const custom = {
+  ...presets.unstable,
+  
+  // Add specific failures from harsh
+  contentFilter: presets.harsh.contentFilter,
+  
+  // Add tool chaos from nightmare
+  toolFailure: presets.nightmare.toolFailure,
+  
+  // Custom values
+  delay: [75, 350],
+}
+```
+
+## Testing Strategy
+
+Use presets progressively:
+
+<Steps>
+  <Step title="Start with realistic">
+    Verify basic error handling works:
+    
+    ```typescript
+    const model = cruelModel(openai('gpt-4'), presets.realistic)
+    ```
+  </Step>
+  
+  <Step title="Move to unstable">
+    Test retry logic and resilience:
+    
+    ```typescript
+    const model = cruelModel(openai('gpt-4'), presets.unstable)
+    ```
+  </Step>
+  
+  <Step title="Try harsh">
+    Stress test with heavy failures:
+    
+    ```typescript
+    const model = cruelModel(openai('gpt-4'), presets.harsh)
+    ```
+  </Step>
+  
+  <Step title="Challenge with nightmare">
+    Find edge cases and breaking points:
+    
+    ```typescript
+    const model = cruelModel(openai('gpt-4'), presets.nightmare)
+    ```
+  </Step>
+  
+  <Step title="Break with apocalypse (optional)">
+    Test absolute worst-case scenarios:
+    
+    ```typescript
+    const model = cruelModel(openai('gpt-4'), presets.apocalypse)
+    ```
+  </Step>
+</Steps>
+
+## Real-World Example
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel, presets } from 'cruel/ai-sdk'
+
+const CHAOS_LEVEL = process.env.CHAOS_LEVEL || 'realistic'
+
+const chaosPresets = {
+  realistic: presets.realistic,
+  unstable: presets.unstable,
+  harsh: presets.harsh,
+  nightmare: presets.nightmare,
+  apocalypse: presets.apocalypse,
+  none: undefined,
+} as const
+
+type ChaosLevel = keyof typeof chaosPresets
+
+const preset = chaosPresets[CHAOS_LEVEL as ChaosLevel]
+
+const model = preset
+  ? cruelModel(openai('gpt-4'), {
+      ...preset,
+      onChaos: (event) => {
+        console.log(`[${CHAOS_LEVEL}] ${event.type}`, event)
+      },
+    })
+  : openai('gpt-4')
+
+export async function query(prompt: string) {
+  return generateText({
+    model,
+    prompt,
+    maxRetries: CHAOS_LEVEL === 'none' ? 0 : 3,
+  })
+}
+```
+
+Run with different chaos levels:
+
+```bash
+# Development
+CHAOS_LEVEL=realistic npm test
+
+# CI/CD
+CHAOS_LEVEL=unstable npm test
+
+# Stress testing
+CHAOS_LEVEL=harsh npm run stress-test
+
+# Chaos engineering
+CHAOS_LEVEL=nightmare npm run chaos-test
+
+# Production (no chaos)
+CHAOS_LEVEL=none npm start
+```
+
+## Preset Comparison
+
+| Preset | Rate Limits | Overload | Stream Cut | Content Filter | Latency | Use Case |
+|--------|-------------|----------|------------|----------------|---------|----------|
+| **realistic** | 2% | 1% | 0% | 0% | 50-200ms | Development |
+| **unstable** | 10% | 5% | 5% | 0% | 100-500ms | CI/Staging |
+| **harsh** | 20% | 10% | 10% | 2% | 200-1000ms | Stress Testing |
+| **nightmare** | 30% | 15% | 15% | 5% | 500-2000ms | Resilience |
+| **apocalypse** | 40% | 20% | 20% | 10% | 1-5 seconds | Max Chaos |
+
+## TypeScript
+
+```typescript
+import type { CruelChaosOptions } from 'cruel/ai-sdk'
+import { presets } from 'cruel/ai-sdk'
+
+// All presets satisfy CruelChaosOptions
+const realistic: CruelChaosOptions = presets.realistic
+const unstable: CruelChaosOptions = presets.unstable
+const harsh: CruelChaosOptions = presets.harsh
+const nightmare: CruelChaosOptions = presets.nightmare
+const apocalypse: CruelChaosOptions = presets.apocalypse
+
+// Type-safe preset selection
+type PresetName = 'realistic' | 'unstable' | 'harsh' | 'nightmare' | 'apocalypse'
+
+function getPreset(name: PresetName): CruelChaosOptions {
+  return presets[name]
+}
+```
+
+## Source Code
+
+Presets are defined in [ai-sdk.ts:529-580](https://github.com/vercel/ai/tree/main/packages/cruel/src/ai-sdk.ts#L529-L580).
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Chaos" icon="box" href="/ai-sdk/models">
+    Learn about all chaos options
+  </Card>
+  <Card title="Provider Wrapping" icon="layer-group" href="/ai-sdk/providers">
+    Use presets with providers
+  </Card>
+  <Card title="Tool Chaos" icon="wrench" href="/ai-sdk/tools">
+    Apply presets to tools
+  </Card>
+  <Card title="Overview" icon="book" href="/ai-sdk/overview">
+    Back to AI SDK overview
+  </Card>
+</CardGroup>

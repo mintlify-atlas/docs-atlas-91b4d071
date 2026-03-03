@@ -1,0 +1,177 @@
+---
+title: Profiles
+description: Save and reuse chaos configurations
+---
+
+Profiles allow you to save and reuse chaos configurations, making it easy to switch between different testing scenarios.
+
+## Create a profile
+
+```typescript
+import { cruel } from "cruel"
+
+// Define a testing profile
+cruel.profile("testing", {
+  fail: 0.2,
+  delay: [100, 500],
+  timeout: 0.05,
+})
+
+// Define a production profile
+cruel.profile("production", {
+  fail: 0.01,
+  delay: [10, 50],
+})
+
+// Define a stress test profile
+cruel.profile("stress", {
+  fail: 0.5,
+  delay: [1000, 5000],
+  timeout: 0.2,
+  jitter: 1000,
+})
+```
+
+## Use a profile
+
+```typescript
+// Activate a profile
+cruel.useProfile("testing")
+
+// All wrapped functions now use this profile
+const api = cruel(fetch)
+await api("https://api.example.com")
+
+// Switch to different profile
+cruel.useProfile("stress")
+await api("https://api.example.com") // Much more chaos
+```
+
+## Environment-based profiles
+
+```typescript
+import { cruel } from "cruel"
+
+// Set up profiles
+cruel.profile("development", cruel.presets.development)
+cruel.profile("staging", cruel.presets.staging)
+cruel.profile("production", cruel.presets.production)
+
+// Activate based on environment
+const env = process.env.NODE_ENV || "development"
+cruel.useProfile(env)
+```
+
+## Feature-specific profiles
+
+```typescript
+import { cruel } from "cruel"
+
+// API testing profile
+cruel.profile("api-testing", {
+  fail: 0.1,
+  delay: [100, 500],
+  timeout: 0.05,
+})
+
+// Database testing profile
+cruel.profile("db-testing", {
+  fail: 0.05,
+  delay: [50, 200],
+  timeout: 0.02,
+})
+
+// Stream testing profile
+cruel.profile("stream-testing", {
+  fail: 0.1,
+  delay: [200, 1000],
+  corrupt: 0.05,
+})
+
+// Use different profiles for different tests
+test("API handles failures", () => {
+  cruel.useProfile("api-testing")
+  // Test API
+})
+
+test("Database handles failures", () => {
+  cruel.useProfile("db-testing")
+  // Test database
+})
+```
+
+## Team profiles
+
+```typescript
+// profiles.ts - Shared team configurations
+import { cruel } from "cruel"
+
+export const profiles = {
+  backend: {
+    fail: 0.1,
+    delay: [100, 500],
+  },
+  frontend: {
+    fail: 0.05,
+    delay: [50, 200],
+  },
+  integration: {
+    fail: 0.2,
+    delay: [200, 1000],
+    timeout: 0.1,
+  },
+}
+
+// Register all profiles
+Object.entries(profiles).forEach(([name, config]) => {
+  cruel.profile(name, config)
+})
+```
+
+```typescript
+// test.ts - Use team profiles
+import { cruel } from "cruel"
+import "./profiles"
+
+test("backend integration", () => {
+  cruel.useProfile("backend")
+  // Tests
+})
+```
+
+## Dynamic profiles
+
+```typescript
+import { cruel } from "cruel"
+
+// Create profile from environment variables
+const customProfile = {
+  fail: parseFloat(process.env.CHAOS_FAIL || "0.1"),
+  delay: [
+    parseInt(process.env.CHAOS_DELAY_MIN || "100"),
+    parseInt(process.env.CHAOS_DELAY_MAX || "500"),
+  ] as [number, number],
+  timeout: parseFloat(process.env.CHAOS_TIMEOUT || "0.05"),
+}
+
+cruel.profile("custom", customProfile)
+cruel.useProfile("custom")
+```
+
+## Reset profiles
+
+```typescript
+// Reset clears all profiles
+cruel.reset()
+
+// Need to recreate profiles after reset
+cruel.profile("testing", { fail: 0.1 })
+```
+
+<Note>
+Profiles are stored globally and persist until `cruel.reset()` is called.
+</Note>
+
+<Tip>
+Combine profiles with presets to create comprehensive testing configurations.
+</Tip>

@@ -1,0 +1,345 @@
+---
+title: Scenario Command
+description: Run predefined chaos scenarios using the Cruel CLI
+---
+
+The `scenario` command runs predefined chaos testing scenarios that simulate real-world failure patterns like network partitions, outages, and performance degradation.
+
+## Syntax
+
+```bash
+cruel scenario <name> [options]
+```
+
+## Arguments
+
+<ParamField path="name" type="string" required>
+  The name of the scenario to run
+  
+  **Available scenarios:**
+  - `networkPartition` - Simulates network partition with intermittent connectivity
+  - `highLatency` - Simulates high network latency conditions
+  - `degraded` - Simulates degraded service performance
+  - `outage` - Simulates complete service outage
+  - `recovery` - Simulates service recovery from failures
+</ParamField>
+
+## Options
+
+<ParamField path="--duration" type="number" default="5000">
+  Duration of the scenario in milliseconds
+</ParamField>
+
+## Available Scenarios
+
+### Network Partition
+
+Simulates network partition where connectivity is intermittent:
+
+```bash
+cruel scenario networkPartition --duration 10000
+```
+
+This scenario mimics network splits common in distributed systems, where some nodes can communicate while others cannot.
+
+### High Latency
+
+Simulates high network latency conditions:
+
+```bash
+cruel scenario highLatency --duration 8000
+```
+
+Use this to test how your application behaves under slow network conditions.
+
+### Degraded Performance
+
+Simulates degraded service performance:
+
+```bash
+cruel scenario degraded --duration 12000
+```
+
+Tests partial failures where the service is slow but still functional.
+
+### Service Outage
+
+Simulates complete service outage:
+
+```bash
+cruel scenario outage --duration 5000
+```
+
+Tests how your application handles total service unavailability.
+
+### Recovery
+
+Simulates service recovery from failures:
+
+```bash
+cruel scenario recovery --duration 15000
+```
+
+Tests how your application handles gradual service recovery.
+
+## Basic Usage
+
+<CodeGroup>
+```bash Network partition
+cruel scenario networkPartition
+```
+
+```bash High latency with custom duration
+cruel scenario highLatency --duration 10000
+```
+
+```bash Service outage
+cruel scenario outage --duration 5000
+```
+
+```bash Long-running degraded scenario
+cruel scenario degraded --duration 30000
+```
+</CodeGroup>
+
+## Output Example
+
+```bash
+$ cruel scenario outage --duration 5000
+
+running scenario: outage
+duration: 5.00s
+
+scenario complete
+calls: 47
+failures: 42
+timeouts: 5
+```
+
+## How Scenarios Work
+
+Scenarios are predefined chaos configurations that run for a specified duration:
+
+```typescript
+// From cli.ts:270-275
+cruel.scenario(name, {
+  chaos: cruel.presets[name] || { fail: 0.5 },
+  duration,
+})
+
+await cruel.play(name)
+```
+
+Each scenario:
+1. Configures chaos parameters from presets or defaults
+2. Runs for the specified duration
+3. Collects statistics about failures injected
+4. Reports results when complete
+
+## Scenario Statistics
+
+After a scenario completes, you'll see:
+
+- **calls**: Total number of function calls made during the scenario
+- **failures**: Number of failures injected
+- **timeouts**: Number of timeouts injected
+
+These statistics help you understand the chaos impact.
+
+## Duration Configuration
+
+The duration parameter controls how long the scenario runs:
+
+```bash
+# 5 seconds (default)
+cruel scenario outage --duration 5000
+
+# 30 seconds
+cruel scenario degraded --duration 30000
+
+# 2 minutes
+cruel scenario networkPartition --duration 120000
+```
+
+Duration is specified in milliseconds.
+
+## Use Cases
+
+### Integration Testing
+
+Run scenarios during integration tests to validate resilience:
+
+```bash
+# Start scenario in background
+cruel scenario degraded --duration 60000 &
+
+# Run your integration tests
+npm run test:integration
+
+# Scenario automatically stops after 60s
+```
+
+### Chaos Engineering Exercises
+
+Run scenarios during game days or chaos engineering exercises:
+
+```bash
+# Simulate a 10-minute network partition
+cruel scenario networkPartition --duration 600000
+```
+
+### Production Validation
+
+Validate production resilience with controlled chaos:
+
+```bash
+# Run a 5-minute degraded performance scenario
+cruel scenario degraded --duration 300000
+```
+
+### Load Testing with Chaos
+
+Combine scenarios with load testing:
+
+```bash
+# Start chaos scenario
+cruel scenario highLatency --duration 30000 &
+
+# Run load test while chaos is active
+cruel benchmark https://api.example.com --count 500 --concurrent 25
+```
+
+## Scenario Combinations
+
+Run multiple scenarios in sequence:
+
+<CodeGroup>
+```bash Sequential scenarios
+cruel scenario networkPartition --duration 10000
+cruel scenario highLatency --duration 10000
+cruel scenario outage --duration 5000
+cruel scenario recovery --duration 15000
+```
+
+```bash Automated chaos
+#!/bin/bash
+scenarios=("networkPartition" "highLatency" "degraded" "outage" "recovery")
+
+for scenario in "${scenarios[@]}"; do
+  echo "Running $scenario"
+  cruel scenario $scenario --duration 10000
+  sleep 5
+done
+```
+</CodeGroup>
+
+## Error Handling
+
+If you forget to provide a scenario name:
+
+```bash
+$ cruel scenario
+error: scenario name required
+available: networkPartition, highLatency, degraded, outage, recovery
+```
+
+The CLI lists all available scenarios to help you choose.
+
+## Scenario Presets
+
+Scenarios use chaos presets under the hood. If a preset exists with the same name as the scenario, it's used:
+
+```typescript
+// From cli.ts:271
+chaos: cruel.presets[name] || { fail: 0.5 }
+```
+
+Otherwise, a default configuration with 50% failure rate is applied.
+
+## Monitoring Scenarios
+
+View accumulated statistics during or after scenarios:
+
+```bash
+# Run scenario in background
+cruel scenario degraded --duration 60000 &
+
+# Check statistics while running
+cruel stats
+
+# Check again after completion
+cruel stats
+```
+
+## Best Practices
+
+### Start with Short Durations
+
+Begin with short durations to understand impact:
+
+```bash
+cruel scenario outage --duration 3000
+```
+
+### Monitor Your System
+
+Watch system metrics while scenarios run:
+- Application logs
+- Error rates
+- Response times
+- Resource utilization
+
+### Document Results
+
+Record scenario results for analysis:
+
+```bash
+cruel scenario networkPartition --duration 10000 > results.txt
+```
+
+### Run During Low Traffic
+
+For production testing, run during low-traffic periods:
+
+```bash
+# Run during maintenance window
+cruel scenario degraded --duration 300000
+```
+
+### Combine with Observability
+
+Use with monitoring tools to see the full impact:
+
+```bash
+# Start scenario
+cruel scenario highLatency --duration 60000 &
+
+# Watch metrics in your monitoring dashboard
+# Grafana, Datadog, New Relic, etc.
+```
+
+## Real-World Scenario Examples
+
+### Simulating AWS Region Failure
+
+```bash
+cruel scenario outage --duration 300000  # 5 minutes
+```
+
+### Simulating Network Congestion
+
+```bash
+cruel scenario highLatency --duration 600000  # 10 minutes
+```
+
+### Simulating Database Slowdown
+
+```bash
+cruel scenario degraded --duration 180000  # 3 minutes
+```
+
+### Simulating Split Brain
+
+```bash
+cruel scenario networkPartition --duration 120000  # 2 minutes
+```

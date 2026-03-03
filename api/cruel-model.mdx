@@ -1,0 +1,244 @@
+---
+title: 'cruelModel()'
+description: 'Wrap a language model to inject chaos and test error handling'
+---
+
+## Overview
+
+`cruelModel()` wraps an AI SDK v3 language model to inject realistic failure scenarios and performance issues. Use it to test how your application handles AI errors, delays, and edge cases.
+
+## Function Signature
+
+```typescript
+function cruelModel<T extends LanguageModelV3>(
+  model: T,
+  options?: CruelModelOptions
+): T
+```
+
+<ParamField path="model" type="LanguageModelV3" required>
+  The AI SDK v3 language model to wrap. This can be any model from providers like OpenAI, Anthropic, Google, etc.
+</ParamField>
+
+<ParamField path="options" type="CruelModelOptions">
+  Chaos configuration options. See [Chaos Options](#chaos-options) below.
+</ParamField>
+
+## Returns
+
+Returns a wrapped model with the same type signature as the input model. The wrapped model intercepts `doGenerate()` and `doStream()` calls to inject chaos before and during generation.
+
+## Chaos Options
+
+All options accept probability values between 0 and 1 (e.g., `0.1` = 10% chance).
+
+### Error Simulation
+
+<ParamField path="invalidApiKey" type="number">
+  Probability of throwing an invalid API key error (401)
+</ParamField>
+
+<ParamField path="quotaExceeded" type="number">
+  Probability of throwing a quota exceeded error (429)
+</ParamField>
+
+<ParamField path="modelUnavailable" type="number">
+  Probability of throwing a model unavailable error (404)
+</ParamField>
+
+<ParamField path="contextLength" type="number">
+  Probability of throwing a context length exceeded error (400)
+</ParamField>
+
+<ParamField path="contentFilter" type="number">
+  Probability of throwing a content filter violation error (400)
+</ParamField>
+
+<ParamField path="emptyResponse" type="number">
+  Probability of throwing an empty response error
+</ParamField>
+
+<ParamField path="fail" type="number">
+  Probability of throwing a generic API failure (500)
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Probability of hanging indefinitely (simulates network timeout)
+</ParamField>
+
+<ParamField path="rateLimit" type="number | { rate: number; retryAfter?: number }">
+  Probability of throwing a rate limit error (429). Can specify `retryAfter` in seconds (default: 60)
+  
+  ```typescript
+  // Simple form
+  rateLimit: 0.1
+  
+  // With custom retry-after
+  rateLimit: { rate: 0.1, retryAfter: 120 }
+  ```
+</ParamField>
+
+<ParamField path="overloaded" type="number">
+  Probability of throwing a server overloaded error (503)
+</ParamField>
+
+### Performance Issues
+
+<ParamField path="delay" type="number | [number, number]">
+  Add artificial delay before request in milliseconds. Can be a fixed value or `[min, max]` range
+  
+  ```typescript
+  delay: 500        // Fixed 500ms delay
+  delay: [100, 500] // Random delay between 100-500ms
+  ```
+</ParamField>
+
+<ParamField path="slowTokens" type="number | [number, number]">
+  Add delay between each token in streaming responses (milliseconds)
+</ParamField>
+
+### Streaming Issues
+
+<ParamField path="streamCut" type="number">
+  Probability of abruptly cutting the stream mid-response
+</ParamField>
+
+<ParamField path="corruptChunks" type="number">
+  Probability of corrupting individual stream chunks by injecting replacement characters
+</ParamField>
+
+### Response Manipulation
+
+<ParamField path="partialResponse" type="number">
+  Probability of truncating response text (returns 10-70% of content)
+</ParamField>
+
+<ParamField path="finishReason" type="'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'">
+  Override the finish reason in the response. When set, always replaces the actual finish reason
+</ParamField>
+
+<ParamField path="tokenUsage" type="{ inputTokens?: number; outputTokens?: number }">
+  Override token usage counts in the response
+  
+  ```typescript
+  tokenUsage: { inputTokens: 100, outputTokens: 50 }
+  ```
+</ParamField>
+
+### Observability
+
+<ParamField path="onChaos" type="(event: ChaosEvent) => void">
+  Callback invoked whenever chaos is injected. Useful for logging, metrics, and testing
+  
+  ```typescript
+  onChaos: (event) => {
+    console.log(`Chaos event: ${event.type}`, event)
+  }
+  ```
+</ParamField>
+
+## Examples
+
+### Basic Error Testing
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelModel } from '@anthropic-ai/cruel'
+
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.1,      // 10% chance of rate limit
+  overloaded: 0.05,    // 5% chance of overload
+  delay: [50, 200],    // Random 50-200ms delay
+})
+
+const result = await generateText({ model, prompt: 'Hello!' })
+```
+
+### Testing Stream Failures
+
+```typescript
+const model = cruelModel(openai('gpt-4'), {
+  streamCut: 0.15,      // 15% chance stream cuts out
+  slowTokens: [20, 100], // 20-100ms between tokens
+  corruptChunks: 0.05,   // 5% chance of corrupt chunks
+})
+
+const result = await streamText({ model, prompt: 'Write a story' })
+```
+
+### Production-Like Testing with Observability
+
+```typescript
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.02,
+  overloaded: 0.01,
+  delay: [50, 150],
+  onChaos: (event) => {
+    // Track chaos events in your monitoring
+    metrics.increment('chaos_event', { type: event.type })
+  },
+})
+```
+
+### Simulating Token Counting Issues
+
+```typescript
+const model = cruelModel(openai('gpt-4'), {
+  tokenUsage: {
+    inputTokens: 999999,  // Test billing logic with high counts
+    outputTokens: 999999,
+  },
+})
+```
+
+## Integration with AI SDK
+
+The wrapped model works seamlessly with all AI SDK functions:
+
+```typescript
+import { generateText, streamText, generateObject } from 'ai'
+import { cruelModel } from '@anthropic-ai/cruel'
+import { anthropic } from '@ai-sdk/anthropic'
+
+const model = cruelModel(anthropic('claude-3-5-sonnet-20241022'), {
+  rateLimit: 0.1,
+})
+
+// Works with generateText
+await generateText({ model, prompt: 'Hello' })
+
+// Works with streamText
+await streamText({ model, prompt: 'Hello' })
+
+// Works with generateObject
+await generateObject({ model, schema: z.object({ name: z.string() }), prompt: 'Extract' })
+```
+
+## Chaos Events
+
+When `onChaos` is provided, it receives events with these types:
+
+```typescript
+type ChaosEvent =
+  | { type: 'rateLimit'; modelId: string }
+  | { type: 'overloaded'; modelId: string }
+  | { type: 'contextLength'; modelId: string }
+  | { type: 'contentFilter'; modelId: string }
+  | { type: 'modelUnavailable'; modelId: string }
+  | { type: 'invalidApiKey'; modelId: string }
+  | { type: 'quotaExceeded'; modelId: string }
+  | { type: 'emptyResponse'; modelId: string }
+  | { type: 'fail'; modelId: string }
+  | { type: 'timeout'; modelId: string }
+  | { type: 'delay'; modelId: string; ms: number }
+  | { type: 'streamCut'; modelId: string }
+  | { type: 'slowTokens'; modelId: string; ms: number }
+  | { type: 'corruptChunk'; modelId: string }
+  | { type: 'partialResponse'; modelId: string }
+```
+
+## Related Functions
+
+- [cruelProvider()](/api/cruel-provider) - Wrap an entire provider instead of individual models
+- [cruelMiddleware()](/api/cruel-middleware) - Apply chaos as AI SDK middleware
+- [presets](/api/presets) - Pre-configured chaos scenarios

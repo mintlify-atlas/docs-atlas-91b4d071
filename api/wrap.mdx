@@ -1,0 +1,587 @@
+---
+title: "cruel.wrap() & cruel.compose()"
+description: "Fluent API and composition for advanced chaos and resilience patterns"
+---
+
+## Overview
+
+`cruel.wrap()` provides a fluent, chainable API for applying chaos behaviors to functions. `cruel.compose()` (aliased as `wrap()`) combines chaos injection with resilience patterns like retry logic, circuit breakers, and fallbacks.
+
+## cruel.wrap()
+
+### Signature
+
+```typescript
+cruel.wrap<T extends AnyFn>(fn: T): {
+  fail: (rate?: number) => T
+  slow: (delay?: number | [number, number]) => T
+  timeout: (rate?: number) => T
+  flaky: (intensity?: number) => T
+  unreliable: () => T
+  nightmare: () => T
+  with: (opts: ChaosOptions) => T
+}
+```
+
+### Parameters
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap with a fluent API for chaos injection.
+</ParamField>
+
+### Return Value
+
+<ResponseField name="wrapper" type="object">
+  An object with chainable methods for applying chaos behaviors:
+  
+  <ResponseField name="fail" type="(rate?: number) => T">
+    Apply failure injection. Default rate: 0.1 (10%).
+  </ResponseField>
+  
+  <ResponseField name="slow" type="(delay?: number | [number, number]) => T">
+    Apply delay. Default: 500ms.
+  </ResponseField>
+  
+  <ResponseField name="timeout" type="(rate?: number) => T">
+    Apply timeout. Default rate: 0.1 (10%).
+  </ResponseField>
+  
+  <ResponseField name="flaky" type="(intensity?: number) => T">
+    Apply combined chaos. Default intensity: 0.2 (20%).
+  </ResponseField>
+  
+  <ResponseField name="unreliable" type="() => T">
+    Apply high chaos (30% fail, 10% timeout, variable delays).
+  </ResponseField>
+  
+  <ResponseField name="nightmare" type="() => T">
+    Apply extreme chaos (50% fail, 20% timeout, long delays).
+  </ResponseField>
+  
+  <ResponseField name="with" type="(opts: ChaosOptions) => T">
+    Apply custom chaos options.
+  </ResponseField>
+</ResponseField>
+
+### Examples
+
+#### Basic Fluent API
+
+```typescript
+import { cruel } from 'cruel'
+
+const apiCall = async (id: string) => {
+  return await fetch(`/api/users/${id}`).then(r => r.json())
+}
+
+// Fluent wrapping with preset
+const flaky = cruel.wrap(apiCall).flaky()
+
+// Fluent wrapping with custom options
+const custom = cruel.wrap(apiCall).with({
+  fail: 0.15,
+  delay: [200, 800],
+  timeout: 0.05
+})
+```
+
+#### Readable Test Setup
+
+```typescript
+import { cruel } from 'cruel'
+
+const api = {
+  // More readable than: cruel(getUser, { fail: 0.1 })
+  getUser: cruel.wrap(getUser).fail(0.1),
+  
+  // Clear intent for slow operations
+  searchUsers: cruel.wrap(searchUsers).slow([500, 1500]),
+  
+  // Easy to see timeout testing
+  uploadFile: cruel.wrap(uploadFile).timeout(0.2)
+}
+```
+
+## cruel.compose()
+
+### Signature
+
+```typescript
+cruel.compose<T extends AnyFn>(fn: T, options: WrapOptions): T
+```
+
+Also available as the standalone `wrap()` export.
+
+### Parameters
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap with chaos and resilience patterns.
+</ParamField>
+
+<ParamField path="options" type="WrapOptions" required>
+  Configuration combining chaos options with resilience patterns.
+  
+  **Chaos Options:**
+  
+  <ParamField path="fail" type="number">
+    Failure probability (0-1).
+  </ParamField>
+  
+  <ParamField path="delay" type="number | [number, number]">
+    Delay in milliseconds or range.
+  </ParamField>
+  
+  <ParamField path="timeout" type="number">
+    Timeout probability (0-1) or timeout duration in ms if > 1.
+  </ParamField>
+  
+  <ParamField path="jitter" type="number">
+    Maximum random jitter in milliseconds.
+  </ParamField>
+  
+  <ParamField path="corrupt" type="number">
+    Corruption probability (0-1).
+  </ParamField>
+  
+  <ParamField path="spike" type="number | [number, number]">
+    Delay spike in milliseconds or range.
+  </ParamField>
+  
+  **Resilience Patterns:**
+  
+  <ParamField path="retry" type="RetryOptions">
+    Retry configuration.
+    
+    <ParamField path="attempts" type="number" required>
+      Number of retry attempts.
+    </ParamField>
+    
+    <ParamField path="delay" type="number | [number, number]">
+      Delay between retries.
+    </ParamField>
+    
+    <ParamField path="backoff" type="'fixed' | 'linear' | 'exponential'">
+      Backoff strategy. Default: 'fixed'.
+    </ParamField>
+    
+    <ParamField path="maxDelay" type="number">
+      Maximum retry delay in milliseconds.
+    </ParamField>
+    
+    <ParamField path="retryIf" type="(error: Error) => boolean">
+      Predicate to determine if error should trigger retry.
+    </ParamField>
+    
+    <ParamField path="onRetry" type="(attempt: number, error: Error) => void">
+      Callback invoked on each retry.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="circuitBreaker" type="CircuitBreakerOptions">
+    Circuit breaker configuration.
+    
+    <ParamField path="threshold" type="number" required>
+      Number of failures before opening circuit.
+    </ParamField>
+    
+    <ParamField path="timeout" type="number" required>
+      Milliseconds to wait before attempting half-open.
+    </ParamField>
+    
+    <ParamField path="onOpen" type="() => void">
+      Callback when circuit opens.
+    </ParamField>
+    
+    <ParamField path="onClose" type="() => void">
+      Callback when circuit closes.
+    </ParamField>
+    
+    <ParamField path="onHalfOpen" type="() => void">
+      Callback when circuit enters half-open state.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="bulkhead" type="BulkheadOptions">
+    Bulkhead pattern for limiting concurrent executions.
+    
+    <ParamField path="maxConcurrent" type="number" required>
+      Maximum number of concurrent executions.
+    </ParamField>
+    
+    <ParamField path="maxQueue" type="number">
+      Maximum queue size for waiting executions.
+    </ParamField>
+    
+    <ParamField path="onReject" type="() => void">
+      Callback when execution is rejected.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="timeoutMs" type="number">
+    Timeout duration in milliseconds (enforced timeout, not probabilistic).
+  </ParamField>
+  
+  <ParamField path="fallback" type="any">
+    Fallback value or function to use on error.
+  </ParamField>
+  
+  <ParamField path="cache" type="CacheOptions">
+    Caching configuration.
+    
+    <ParamField path="ttl" type="number" required>
+      Time-to-live for cached values in milliseconds.
+    </ParamField>
+    
+    <ParamField path="key" type="(...args: unknown[]) => string">
+      Function to generate cache key from arguments.
+    </ParamField>
+    
+    <ParamField path="onHit" type="(key: string) => void">
+      Callback on cache hit.
+    </ParamField>
+    
+    <ParamField path="onMiss" type="(key: string) => void">
+      Callback on cache miss.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="rateLimiter" type="RateLimiterOptions">
+    Rate limiting configuration.
+    
+    <ParamField path="requests" type="number" required>
+      Number of requests allowed per interval.
+    </ParamField>
+    
+    <ParamField path="interval" type="number" required>
+      Time window in milliseconds.
+    </ParamField>
+    
+    <ParamField path="onLimit" type="() => void">
+      Callback when rate limit is hit.
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="hedge" type="HedgeOptions">
+    Hedging configuration for parallel requests.
+    
+    <ParamField path="count" type="number" required>
+      Number of parallel requests to make.
+    </ParamField>
+    
+    <ParamField path="delay" type="number" required>
+      Delay in milliseconds between starting each request.
+    </ParamField>
+  </ParamField>
+</ParamField>
+
+### Return Value
+
+<ResponseField name="wrapped" type="T">
+  The wrapped function with all specified chaos and resilience patterns applied in the correct order:
+  1. Cache (if configured)
+  2. Rate limiter (if configured)
+  3. Bulkhead (if configured)
+  4. Circuit breaker (if configured)
+  5. Retry logic (if configured)
+  6. Timeout (if configured)
+  7. Fallback (if configured)
+  8. Hedging (if configured)
+  9. Chaos injection
+</ResponseField>
+
+### Examples
+
+#### Retry with Chaos
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientApi = cruel.compose(apiCall, {
+  // Inject chaos
+  fail: 0.3,
+  delay: [100, 500],
+  
+  // Handle with retry
+  retry: {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+    maxDelay: 5000,
+    onRetry: (attempt, error) => {
+      console.log(`Retry ${attempt}: ${error.message}`)
+    }
+  }
+})
+
+try {
+  const result = await resilientApi()
+} catch (error) {
+  // Only fails after 3 retry attempts
+}
+```
+
+#### Circuit Breaker Pattern
+
+```typescript
+import { cruel } from 'cruel'
+
+const protected = cruel.compose(unreliableService, {
+  fail: 0.5,  // 50% failure rate
+  
+  circuitBreaker: {
+    threshold: 5,  // Open after 5 failures
+    timeout: 10000,  // Wait 10s before retry
+    onOpen: () => console.log('Circuit opened!'),
+    onClose: () => console.log('Circuit closed!'),
+    onHalfOpen: () => console.log('Circuit half-open, testing...')
+  }
+})
+
+// After 5 failures, circuit opens and rejects immediately
+// After 10s, attempts one request to test if service recovered
+```
+
+#### Complete Resilience Stack
+
+```typescript
+import { cruel } from 'cruel'
+
+const productionApi = cruel.compose(criticalApiCall, {
+  // Chaos injection for testing
+  fail: 0.1,
+  delay: [50, 200],
+  timeout: 0.02,
+  
+  // Rate limiting
+  rateLimiter: {
+    requests: 100,
+    interval: 60000,  // 100 requests per minute
+    onLimit: () => console.warn('Rate limit exceeded')
+  },
+  
+  // Caching
+  cache: {
+    ttl: 60000,  // 1 minute cache
+    key: (userId) => `user:${userId}`,
+    onHit: (key) => console.log(`Cache hit: ${key}`),
+    onMiss: (key) => console.log(`Cache miss: ${key}`)
+  },
+  
+  // Bulkhead isolation
+  bulkhead: {
+    maxConcurrent: 10,
+    maxQueue: 50,
+    onReject: () => console.error('Bulkhead full')
+  },
+  
+  // Circuit breaker
+  circuitBreaker: {
+    threshold: 10,
+    timeout: 30000,
+    onOpen: () => console.error('Circuit opened')
+  },
+  
+  // Retry logic
+  retry: {
+    attempts: 3,
+    delay: [500, 1000],
+    backoff: 'exponential',
+    retryIf: (error) => error.code !== 'CRUEL_CIRCUIT_OPEN'
+  },
+  
+  // Timeout enforcement
+  timeoutMs: 5000,
+  
+  // Fallback on total failure
+  fallback: () => ({ cached: true, data: [] })
+})
+
+const result = await productionApi('user-123')
+```
+
+#### Hedging for Low Latency
+
+```typescript
+import { cruel } from 'cruel'
+
+// Send parallel requests, use first successful response
+const lowLatency = cruel.compose(apiCall, {
+  delay: [100, 1000],  // Variable latency
+  
+  hedge: {
+    count: 3,  // Send 3 parallel requests
+    delay: 50  // 50ms between each
+  }
+})
+
+// Reduces tail latency by sending redundant requests
+const result = await lowLatency()
+```
+
+#### Conditional Retry
+
+```typescript
+import { cruel } from 'cruel'
+
+const smart = cruel.compose(apiCall, {
+  fail: 0.3,
+  
+  retry: {
+    attempts: 5,
+    delay: 1000,
+    backoff: 'exponential',
+    
+    // Only retry on specific errors
+    retryIf: (error) => {
+      // Don't retry on client errors (400s)
+      if (error.status >= 400 && error.status < 500) {
+        return false
+      }
+      // Retry on server errors (500s) and network errors
+      return true
+    },
+    
+    onRetry: (attempt, error) => {
+      console.log(`Attempt ${attempt} failed: ${error.message}`)
+    }
+  }
+})
+```
+
+#### Graceful Degradation
+
+```typescript
+import { cruel } from 'cruel'
+
+const graceful = cruel.compose(fetchUserProfile, {
+  fail: 0.2,
+  delay: [100, 500],
+  timeoutMs: 3000,
+  
+  retry: {
+    attempts: 2,
+    delay: 500
+  },
+  
+  // Fallback to cached/default data
+  fallback: async (userId) => {
+    console.log('Using fallback for user', userId)
+    return {
+      id: userId,
+      name: 'Unknown User',
+      cached: true
+    }
+  }
+})
+
+// Always returns a result, even on failure
+const profile = await graceful('user-123')
+```
+
+## Standalone Resilience Functions
+
+These can also be used independently without chaos:
+
+### cruel.retry()
+
+```typescript
+import { cruel } from 'cruel'
+
+const retried = cruel.retry(apiCall, {
+  attempts: 3,
+  delay: 1000,
+  backoff: 'exponential'
+})
+```
+
+### cruel.circuitBreaker()
+
+```typescript
+import { cruel } from 'cruel'
+
+const protected = cruel.circuitBreaker(apiCall, {
+  threshold: 5,
+  timeout: 10000,
+  onOpen: () => console.log('Circuit opened')
+})
+
+// Check state
+const state = protected.getState()
+console.log(state)  // { failures: 0, state: 'closed', lastFailure: 0 }
+
+// Reset circuit
+protected.reset()
+```
+
+### cruel.bulkhead()
+
+```typescript
+import { cruel } from 'cruel'
+
+const limited = cruel.bulkhead(apiCall, {
+  maxConcurrent: 5,
+  maxQueue: 10,
+  onReject: () => console.warn('Too many requests')
+})
+```
+
+### cruel.rateLimiter()
+
+```typescript
+import { cruel } from 'cruel'
+
+const ratelimited = cruel.rateLimiter(apiCall, {
+  requests: 100,
+  interval: 60000  // 100 requests per minute
+})
+```
+
+### cruel.cache()
+
+```typescript
+import { cruel } from 'cruel'
+
+const cached = cruel.cache(expensiveCall, {
+  ttl: 60000,  // 1 minute
+  key: (...args) => JSON.stringify(args)
+})
+```
+
+### cruel.withTimeout()
+
+```typescript
+import { cruel } from 'cruel'
+
+const timeouted = cruel.withTimeout(slowCall, {
+  ms: 5000,
+  onTimeout: () => console.log('Operation timed out')
+})
+```
+
+### cruel.fallback()
+
+```typescript
+import { cruel } from 'cruel'
+
+const safe = cruel.fallback(riskyCall, {
+  fallback: { default: true },
+  onFallback: (error) => console.error('Used fallback:', error)
+})
+```
+
+### cruel.hedge()
+
+```typescript
+import { cruel } from 'cruel'
+
+const hedged = cruel.hedge(apiCall, {
+  count: 3,
+  delay: 50
+})
+```
+
+## Related Methods
+
+- [cruel()](/api/cruel) - Main chaos wrapper
+- [createCruel()](/api/create-cruel) - Factory for custom instances
+- Individual resilience exports: `withRetry`, `createCircuitBreaker`, `createBulkhead`, etc.

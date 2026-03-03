@@ -1,0 +1,459 @@
+---
+title: AI Provider Chaos
+description: Test AI providers with realistic failure scenarios
+---
+
+# AI Provider Chaos
+
+Simulate realistic AI provider failures including rate limits, overloaded models, and API errors.
+
+## Provider-Specific Errors
+
+Test different provider error conditions:
+
+<Tabs>
+  <Tab title="Rate Limit">
+    Simulate rate limiting:
+
+    ```typescript
+    import { openai } from '@ai-sdk/openai'
+    import { generateText } from 'ai'
+    import { cruelModel } from 'cruel/ai-sdk'
+
+    const model = cruelModel(openai('gpt-4o'), {
+      rateLimit: 0.2 // 20% rate limit
+    })
+
+    try {
+      const result = await generateText({
+        model,
+        prompt: 'Hello'
+      })
+    } catch (error) {
+      // Error: API call failed with status 429
+      console.error('Rate limited:', error.message)
+    }
+    ```
+  </Tab>
+
+  <Tab title="Model Overloaded">
+    Simulate overloaded models:
+
+    ```typescript
+    const model = cruelModel(openai('gpt-4o'), {
+      overloaded: 0.1 // 10% overload
+    })
+
+    try {
+      await generateText({ model, prompt: 'Test' })
+    } catch (error) {
+      // Error: API call failed with status 529
+      console.error('Model overloaded')
+    }
+    ```
+  </Tab>
+
+  <Tab title="Context Length">
+    Simulate context length exceeded:
+
+    ```typescript
+    const model = cruelModel(openai('gpt-4o'), {
+      contextLength: 0.05 // 5% context error
+    })
+
+    try {
+      await generateText({
+        model,
+        prompt: 'Very long prompt...'.repeat(1000)
+      })
+    } catch (error) {
+      // Error: Context length exceeded
+      console.error('Prompt too long')
+    }
+    ```
+  </Tab>
+
+  <Tab title="Content Filter">
+    Simulate content filtering:
+
+    ```typescript
+    const model = cruelModel(openai('gpt-4o'), {
+      contentFilter: 0.02 // 2% filter
+    })
+
+    try {
+      await generateText({
+        model,
+        prompt: 'Potentially filtered content'
+      })
+    } catch (error) {
+      // Error: Content filter triggered
+      console.error('Content blocked')
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Model Unavailability
+
+Simulate model downtime:
+
+```typescript
+import { anthropic } from '@ai-sdk/anthropic'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(anthropic('claude-3-5-sonnet-20241022'), {
+  modelUnavailable: 0.15 // 15% unavailable
+})
+
+try {
+  const result = await generateText({
+    model,
+    prompt: 'Explain distributed systems'
+  })
+  console.log(result.text)
+} catch (error) {
+  // Error: Model not available
+  console.error('Model unavailable, try fallback')
+}
+```
+
+## Authentication Errors
+
+<CodeGroup>
+```typescript invalid-key
+const model = cruelModel(openai('gpt-4o'), {
+  invalidApiKey: 0.01 // 1% invalid key
+})
+
+try {
+  await generateText({ model, prompt: 'Test' })
+} catch (error) {
+  // Error: Invalid API key
+}
+```
+
+```typescript quota-exceeded
+const model = cruelModel(openai('gpt-4o'), {
+  quotaExceeded: 0.02 // 2% quota error
+})
+
+try {
+  await generateText({ model, prompt: 'Test' })
+} catch (error) {
+  // Error: Quota exceeded
+}
+```
+</CodeGroup>
+
+## Gateway Integration Example
+
+Test with AI Gateway under chaos:
+
+```typescript
+import { gateway } from '@ai-sdk/gateway'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(gateway('google/gemini-2.0-flash-exp'), {
+  rateLimit: 0.1,
+  overloaded: 0.1,
+  delay: [200, 1500],
+  partialResponse: 0.2,
+  slowTokens: [50, 300],
+  onChaos: (event) => {
+    console.log(`[chaos] ${event.type}`, event.modelId)
+  }
+})
+
+let successes = 0
+let failures = 0
+
+for (let i = 0; i < 10; i++) {
+  const start = Date.now()
+  try {
+    const result = await generateText({
+      model,
+      prompt: `Request ${i + 1}: Name a color.`,
+      maxRetries: 2
+    })
+    successes++
+    console.log(`[${i + 1}] ${Date.now() - start}ms:`, result.text.slice(0, 50))
+  } catch (e) {
+    failures++
+    console.log(`[${i + 1}] ${Date.now() - start}ms failed:`, (e as Error).message)
+  }
+}
+
+console.log(`\nsuccesses: ${successes}, failures: ${failures}`)
+```
+
+## Multi-Provider Testing
+
+Test fallback between providers:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { google } from '@ai-sdk/google'
+import { generateText } from 'ai'
+import { cruelModel, presets } from 'cruel/ai-sdk'
+
+const providers = [
+  cruelModel(openai('gpt-4o'), presets.unstable),
+  cruelModel(anthropic('claude-3-5-sonnet-20241022'), presets.unstable),
+  cruelModel(google('gemini-2.0-flash-exp'), presets.unstable)
+]
+
+async function generateWithFallback(prompt: string) {
+  for (let i = 0; i < providers.length; i++) {
+    try {
+      const result = await generateText({
+        model: providers[i],
+        prompt
+      })
+      console.log(`Success with provider ${i + 1}`)
+      return result.text
+    } catch (error) {
+      console.log(`Provider ${i + 1} failed:`, error.message)
+      if (i === providers.length - 1) throw error
+    }
+  }
+}
+
+const text = await generateWithFallback('Write a haiku about reliability')
+console.log(text)
+```
+
+## Partial Responses
+
+Handle incomplete responses:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4o'), {
+  partialResponse: 0.3 // 30% partial
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Write a long essay about testing (at least 500 words)'
+})
+
+if (result.text.length < 500) {
+  console.log('Got partial response:', result.text.length, 'chars')
+  console.log('Finish reason:', result.finishReason)
+  // Handle incomplete response
+}
+```
+
+## Custom Finish Reasons
+
+Override finish reasons for testing:
+
+```typescript
+import { cruelModel } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+
+const model = cruelModel(openai('gpt-4o'), {
+  finishReason: 'length' // Force length limit
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Count to 100'
+})
+
+console.log('Finish reason:', result.finishReason)
+// Always 'length' instead of 'stop'
+
+if (result.finishReason === 'length') {
+  console.log('Response was truncated')
+}
+```
+
+## Token Usage Chaos
+
+Override token usage for testing:
+
+```typescript
+const model = cruelModel(openai('gpt-4o'), {
+  tokenUsage: {
+    inputTokens: 10000,  // Simulate large input
+    outputTokens: 5000   // Simulate large output
+  }
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Hello'
+})
+
+console.log('Usage:', result.usage)
+// { promptTokens: 10000, completionTokens: 5000, totalTokens: 15000 }
+
+if (result.usage.totalTokens > 8000) {
+  console.log('Warning: High token usage')
+}
+```
+
+## Testing with Jest
+
+Comprehensive provider resilience tests:
+
+```typescript
+import { describe, test, expect, jest } from '@jest/globals'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+describe('AI Provider Resilience', () => {
+  test('retries on rate limit', async () => {
+    let attempts = 0
+    
+    const model = cruelModel(openai('gpt-4o'), {
+      rateLimit: 0.5
+    })
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        attempts++
+        await generateText({ model, prompt: 'Test' })
+        break
+      } catch (error) {
+        if (i === 2) throw error
+        await new Promise(r => setTimeout(r, 1000))
+      }
+    }
+
+    expect(attempts).toBeGreaterThanOrEqual(1)
+  })
+
+  test('handles overloaded model', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      overloaded: 1
+    })
+
+    await expect(generateText({
+      model,
+      prompt: 'Test'
+    })).rejects.toThrow(/529|overload/i)
+  })
+
+  test('validates context length', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      contextLength: 1
+    })
+
+    await expect(generateText({
+      model,
+      prompt: 'Test'
+    })).rejects.toThrow(/context|length/i)
+  })
+
+  test('handles content filter', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      contentFilter: 1
+    })
+
+    await expect(generateText({
+      model,
+      prompt: 'Test'
+    })).rejects.toThrow(/content|filter/i)
+  })
+
+  test('falls back on model unavailable', async () => {
+    const primary = cruelModel(openai('gpt-4o'), {
+      modelUnavailable: 1
+    })
+
+    const fallback = cruelModel(openai('gpt-4o-mini'), {
+      modelUnavailable: 0
+    })
+
+    let result
+    try {
+      result = await generateText({ model: primary, prompt: 'Test' })
+    } catch {
+      result = await generateText({ model: fallback, prompt: 'Test' })
+    }
+
+    expect(result).toBeDefined()
+    expect(result.text).toBeTruthy()
+  })
+})
+```
+
+## Production Monitoring
+
+Monitor provider health in production:
+
+```typescript
+import { cruelModel, diagnostics } from 'cruel/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+
+class ProviderMonitor {
+  private ctx = diagnostics.context()
+  private requestId = 0
+
+  async generate(prompt: string) {
+    const id = ++this.requestId
+    const track = diagnostics.tracker(this.ctx)
+
+    const model = cruelModel(openai('gpt-4o'), {
+      // Only in development
+      ...( process.env.NODE_ENV === 'development' && {
+        rateLimit: 0.1,
+        overloaded: 0.05
+      }),
+      onChaos: track
+    })
+
+    diagnostics.before(this.ctx, id)
+    const start = Date.now()
+
+    try {
+      const result = await generateText({ model, prompt })
+      diagnostics.success(this.ctx, id, Date.now() - start, result.text)
+      return result
+    } catch (error) {
+      diagnostics.failure(this.ctx, id, Date.now() - start, error)
+      throw error
+    }
+  }
+
+  getHealthMetrics() {
+    const stats = diagnostics.stats(this.ctx)
+    return {
+      totalRequests: stats.total,
+      successRate: stats.successRate,
+      avgLatency: stats.latency.success.avg,
+      p95Latency: stats.latency.success.p95,
+      commonErrors: stats.errors.slice(0, 3),
+      chaosEvents: stats.events
+    }
+  }
+}
+
+const monitor = new ProviderMonitor()
+
+for (let i = 0; i < 20; i++) {
+  try {
+    await monitor.generate('Test prompt')
+  } catch {}
+}
+
+console.log('Health:', monitor.getHealthMetrics())
+```
+
+## Next Steps
+
+- Learn about [AI Tool Failures](/examples/ai-tool-failures)
+- Explore [Testing Integration](/examples/testing-integration)
+- Master [Production Readiness](/examples/production-readiness)

@@ -1,0 +1,444 @@
+---
+title: Fallback
+description: Provide alternative values or behaviors when operations fail
+---
+
+## Overview
+
+The Fallback pattern provides a graceful degradation mechanism by returning a default value or executing an alternative function when the primary operation fails. This ensures your application can continue functioning even when dependencies are unavailable.
+
+## When to Use
+
+- Providing default values when external services fail
+- Graceful degradation of non-critical features
+- Serving cached data when live data is unavailable
+- Implementing feature flags with fallbacks
+- Configuration management with defaults
+
+## API Reference
+
+### Function Signature
+
+```typescript
+function withFallback<T extends AnyFn>(
+  fn: T,
+  options: FallbackOptions<Settled<ReturnType<T>>>
+): T
+```
+
+### Options
+
+<ParamField path="fallback" type="T | (() => T | Promise<T>)" required>
+  The fallback value or function to use when the primary operation fails. Can be:
+  - A static value
+  - A synchronous function that returns a value
+  - An async function that returns a promise
+</ParamField>
+
+<ParamField path="onFallback" type="(error: Error) => void">
+  Callback function executed when falling back. Receives the error that triggered the fallback.
+</ParamField>
+
+## Examples
+
+### Basic Fallback with Static Value
+
+```typescript
+import { withFallback } from 'cruel'
+
+const fetchConfig = async () => {
+  const response = await fetch('https://api.example.com/config')
+  return response.json()
+}
+
+const safeConfig = withFallback(fetchConfig, {
+  fallback: {
+    mode: 'safe',
+    features: [],
+    timeout: 5000,
+  },
+})
+
+// Always returns a config, even if the API fails
+const config = await safeConfig()
+```
+
+### Fallback with Function
+
+```typescript
+const getUserProfile = withFallback(
+  fetchUserFromAPI,
+  {
+    fallback: async () => {
+      // Try loading from cache
+      const cached = await cache.get('user-profile')
+      if (cached) return cached
+      
+      // Return minimal default
+      return {
+        id: 'guest',
+        name: 'Guest User',
+        permissions: ['read'],
+      }
+    },
+  }
+)
+```
+
+### With Fallback Callback
+
+```typescript
+import { withFallback } from 'cruel'
+
+const getFeatureFlags = withFallback(
+  fetchFeatureFlags,
+  {
+    fallback: { enableNewUI: false, betaFeatures: [] },
+    onFallback: (error) => {
+      console.warn('Feature flags unavailable, using defaults:', error.message)
+      metrics.increment('feature_flags.fallback')
+    },
+  }
+)
+```
+
+### Cascading Fallbacks
+
+```typescript
+// Try primary, then secondary, then default
+const getData = withFallback(
+  fetchFromPrimary,
+  {
+    fallback: async () => {
+      try {
+        return await fetchFromSecondary()
+      } catch {
+        return await fetchFromCache()
+      }
+    },
+    onFallback: (error) => {
+      console.log('Primary failed, trying secondary:', error.message)
+    },
+  }
+)
+```
+
+### Configuration with Environment Fallbacks
+
+```typescript
+const getConfig = withFallback(
+  async () => {
+    // Try to load from config service
+    return await fetchRemoteConfig()
+  },
+  {
+    fallback: () => {
+      // Fall back to environment variables
+      return {
+        apiKey: process.env.API_KEY,
+        apiUrl: process.env.API_URL || 'https://api.example.com',
+        timeout: parseInt(process.env.TIMEOUT || '5000'),
+      }
+    },
+  }
+)
+```
+
+### Stale-While-Revalidate Pattern
+
+```typescript
+interface CacheEntry<T> {
+  value: T
+  timestamp: number
+}
+
+function createSWR<T>(fetchFn: () => Promise<T>, ttl: number = 60000) {
+  let cache: CacheEntry<T> | null = null
+
+  return withFallback(
+    async () => {
+      const result = await fetchFn()
+      cache = { value: result, timestamp: Date.now() }
+      return result
+    },
+    {
+      fallback: () => {
+        if (cache && Date.now() - cache.timestamp < ttl * 10) {
+          // Return stale data while revalidating in background
+          fetchFn().then(result => {
+            cache = { value: result, timestamp: Date.now() }
+          }).catch(() => {})
+          
+          return cache.value
+        }
+        throw new Error('No cached data available')
+      },
+    }
+  )
+}
+
+const getUser = createSWR(() => fetchUserFromAPI('123'), 60000)
+```
+
+## Combining with Other Patterns
+
+### Fallback + Retry
+
+```typescript
+import { withFallback, withRetry } from 'cruel'
+
+// Try multiple times, then fall back
+const resilientAPI = withFallback(
+  withRetry(fetchData, {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+  }),
+  {
+    fallback: cachedData,
+    onFallback: (error) => {
+      console.log('All retries failed, using cached data')
+    },
+  }
+)
+```
+
+### Fallback + Timeout
+
+```typescript
+import { withFallback, withTimeout } from 'cruel'
+
+const quickAPI = withFallback(
+  withTimeout(fetchData, { ms: 3000 }),
+  {
+    fallback: defaultData,
+    onFallback: (error) => {
+      if (error instanceof CruelTimeoutError) {
+        console.log('Request timed out, using default')
+      }
+    },
+  }
+)
+```
+
+### Fallback + Circuit Breaker
+
+```typescript
+import { withFallback, createCircuitBreaker } from 'cruel'
+
+const resilientAPI = withFallback(
+  createCircuitBreaker(apiCall, {
+    threshold: 5,
+    timeout: 30000,
+  }),
+  {
+    fallback: () => {
+      console.log('Circuit is open, using fallback')
+      return getFallbackData()
+    },
+  }
+)
+```
+
+### With Compose
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientAPI = cruel.compose(fetchData, {
+  retry: {
+    attempts: 3,
+    backoff: 'exponential',
+  },
+  timeoutMs: 5000,
+  fallback: defaultValue,
+  circuitBreaker: {
+    threshold: 5,
+    timeout: 30000,
+  },
+})
+```
+
+## Advanced Examples
+
+### Multi-Source Fallback
+
+```typescript
+class DataService {
+  async getData(key: string) {
+    return withFallback(
+      () => this.fetchFromPrimary(key),
+      {
+        fallback: async () => {
+          // Try secondary sources in order
+          const sources = [
+            () => this.fetchFromSecondary(key),
+            () => this.fetchFromCache(key),
+            () => this.fetchFromLocalStorage(key),
+            () => this.getDefaultValue(key),
+          ]
+
+          for (const source of sources) {
+            try {
+              return await source()
+            } catch {
+              continue
+            }
+          }
+
+          throw new Error('All data sources failed')
+        },
+      }
+    )()
+  }
+
+  private async fetchFromPrimary(key: string) { /* ... */ }
+  private async fetchFromSecondary(key: string) { /* ... */ }
+  private async fetchFromCache(key: string) { /* ... */ }
+  private async fetchFromLocalStorage(key: string) { /* ... */ }
+  private getDefaultValue(key: string) { /* ... */ }
+}
+```
+
+### Conditional Fallback
+
+```typescript
+function withConditionalFallback<T>(
+  fn: () => Promise<T>,
+  shouldFallback: (error: Error) => boolean,
+  fallbackValue: T
+) {
+  return withFallback(fn, {
+    fallback: (error) => {
+      if (shouldFallback(error)) {
+        return fallbackValue
+      }
+      throw error
+    },
+  })
+}
+
+const apiCall = withConditionalFallback(
+  fetchData,
+  (error) => {
+    // Only fallback for network errors, not auth errors
+    return error.name === 'NetworkError' || error instanceof CruelTimeoutError
+  },
+  defaultData
+)
+```
+
+### Feature Flag with Gradual Rollout
+
+```typescript
+const getFeatureValue = withFallback(
+  async () => {
+    const flags = await fetchFeatureFlags()
+    const rolloutPercentage = flags.newFeatureRollout
+    const userId = getCurrentUserId()
+    const userHash = hashCode(userId) % 100
+    
+    return userHash < rolloutPercentage
+  },
+  {
+    fallback: false,  // Default to feature off
+    onFallback: () => {
+      console.log('Feature flag service unavailable, feature disabled')
+    },
+  }
+)
+```
+
+### Cached Response with Freshness Check
+
+```typescript
+interface CachedResponse<T> {
+  data: T
+  timestamp: number
+  etag?: string
+}
+
+function withCachedFallback<T>(
+  fetchFn: () => Promise<T>,
+  cacheKey: string,
+  maxAge: number
+) {
+  return withFallback(
+    fetchFn,
+    {
+      fallback: async () => {
+        const cached = await cache.get<CachedResponse<T>>(cacheKey)
+        
+        if (!cached) {
+          throw new Error('No cached data available')
+        }
+
+        const age = Date.now() - cached.timestamp
+        if (age > maxAge * 2) {
+          throw new Error('Cached data too old')
+        }
+
+        console.log(`Using cached data (age: ${age}ms)`)
+        return cached.data
+      },
+      onFallback: (error) => {
+        console.warn('Using cached data due to:', error.message)
+      },
+    }
+  )
+}
+```
+
+## Best Practices
+
+- **Provide sensible defaults**: Fallback values should allow the application to continue functioning
+- **Log fallback events**: Track when fallbacks are triggered for monitoring
+- **Test fallback paths**: Ensure fallback logic is tested as thoroughly as primary paths
+- **Consider data staleness**: Be careful with cached fallbacks - add timestamps and TTLs
+- **Document fallback behavior**: Make it clear to users when they're seeing fallback data
+- **Combine with retries**: Try multiple times before falling back
+- **Use appropriate fallbacks**: Don't return mock data for critical operations
+- **Monitor fallback rates**: High fallback rates indicate reliability issues
+
+## Fallback Strategies
+
+### Static Default
+```typescript
+{ fallback: defaultValue }
+```
+Use for: Configuration, feature flags, non-critical data
+
+### Cached Data
+```typescript
+{ fallback: async () => await cache.get(key) }
+```
+Use for: API responses, computed values, user data
+
+### Alternative Service
+```typescript
+{ fallback: async () => await backupService.fetch() }
+```
+Use for: High-availability requirements, critical data
+
+### Degraded Functionality
+```typescript
+{ fallback: () => ({ limited: true, data: [] }) }
+```
+Use for: Non-essential features, gradual degradation
+
+### Empty/Null Response
+```typescript
+{ fallback: null }
+```
+Use for: Optional data, when absence is acceptable
+
+## Common Use Cases
+
+| Scenario | Primary Source | Fallback | Example |
+|----------|----------------|----------|----------|
+| Configuration | Remote config service | Environment variables | API keys, feature flags |
+| User data | Database | Cache | User profiles, preferences |
+| Content | CMS API | Static content | Blog posts, marketing copy |
+| Recommendations | ML service | Popular items | Product recommendations |
+| Translations | Translation API | Embedded strings | i18n fallbacks |
+| Analytics | Analytics service | No-op function | Tracking, metrics |

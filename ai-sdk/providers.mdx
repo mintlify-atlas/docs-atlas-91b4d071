@@ -1,0 +1,406 @@
+---
+title: cruelProvider
+description: Wrap AI SDK providers to inject chaos across all models
+---
+
+`cruelProvider()` wraps entire AI SDK v6 providers, applying chaos configuration to all models created from that provider.
+
+## API Reference
+
+```typescript
+function cruelProvider<T extends ProviderV3>(
+  provider: T,
+  options?: CruelProviderOptions
+): T
+```
+
+<ParamField path="provider" type="ProviderV3" required>
+  The AI SDK provider to wrap. Supports all standard providers:
+  - `openai` from `@ai-sdk/openai`
+  - `anthropic` from `@ai-sdk/anthropic`
+  - `google` from `@ai-sdk/google`
+  - `mistral` from `@ai-sdk/mistral`
+  - `gateway` from `@ai-sdk/gateway`
+  - Any AI SDK v6 compatible provider
+</ParamField>
+
+<ParamField path="options" type="CruelProviderOptions">
+  Chaos configuration applied to all models. Extends `CruelChaosOptions` with:
+  - All options from [cruelModel](/ai-sdk/models#chaos-options)
+  - `models` - Per-model configuration overrides
+</ParamField>
+
+<ResponseField name="return" type="T">
+  Returns a wrapped provider with the same interface.
+</ResponseField>
+
+## Basic Usage
+
+<CodeGroup>
+```typescript OpenAI
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, {
+  rateLimit: 0.15,
+  delay: [100, 300],
+})
+
+// Chaos applies to all models
+const gpt4 = provider('gpt-4')
+const gpt35 = provider('gpt-3.5-turbo')
+
+const result = await generateText({
+  model: gpt4,
+  prompt: 'Hello',
+})
+```
+
+```typescript Anthropic
+import { anthropic } from '@ai-sdk/anthropic'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(anthropic, {
+  overloaded: 0.1,
+  streamCut: 0.05,
+})
+
+const claude = provider('claude-3-5-sonnet-20241022')
+
+const result = await generateText({
+  model: claude,
+  prompt: 'Explain chaos engineering',
+})
+```
+
+```typescript Gateway
+import { gateway } from '@ai-sdk/gateway'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const gw = cruelProvider(gateway, {
+  rateLimit: 0.2,
+  delay: [50, 200],
+})
+
+const gpt4 = gw('openai/gpt-4')
+const claude = gw('anthropic/claude-3-5-sonnet-20241022')
+
+// Both models have same chaos config
+```
+</CodeGroup>
+
+## Per-Model Configuration
+
+Override chaos settings for specific models:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, {
+  // Default config for all models
+  rateLimit: 0.1,
+  delay: [100, 300],
+  
+  // Per-model overrides
+  models: {
+    'gpt-4': {
+      // GPT-4 is more expensive, simulate higher rate limits
+      rateLimit: 0.3,
+      overloaded: 0.2,
+    },
+    'gpt-3.5-turbo': {
+      // GPT-3.5 is faster, simulate stream issues
+      streamCut: 0.1,
+      slowTokens: [10, 50],
+    },
+  },
+})
+
+const gpt4 = provider('gpt-4')           // Gets gpt-4 specific config
+const gpt35 = provider('gpt-3.5-turbo')  // Gets gpt-3.5 specific config
+const other = provider('gpt-4o')         // Gets default config
+```
+
+<Note>
+  Model-specific options are **merged** with provider defaults. Model options override provider options for the same fields.
+</Note>
+
+## All Model Types
+
+`cruelProvider` automatically wraps all model types:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, {
+  rateLimit: 0.1,
+  delay: [50, 150],
+})
+
+// Language models
+const gpt4 = provider('gpt-4')
+const gpt4 = provider.languageModel('gpt-4')
+
+// Embedding models
+const embedder = provider.embedding('text-embedding-3-small')
+const embedder = provider.embeddingModel('text-embedding-3-small')
+const embedder = provider.textEmbeddingModel('text-embedding-3-small')
+
+// Image models
+const dalle = provider.image('dall-e-3')
+const dalle = provider.imageModel('dall-e-3')
+
+// Speech models
+const tts = provider.speech('tts-1')
+const tts = provider.speechModel('tts-1')
+
+// Transcription models
+const whisper = provider.transcription('whisper-1')
+const whisper = provider.transcriptionModel('whisper-1')
+```
+
+## Gateway Provider
+
+When using `@ai-sdk/gateway`, you can configure chaos per-provider:
+
+```typescript
+import { gateway } from '@ai-sdk/gateway'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const gw = cruelProvider(gateway, {
+  rateLimit: 0.1,
+  
+  models: {
+    // Match full gateway model IDs
+    'openai/gpt-4': {
+      rateLimit: 0.3,
+      overloaded: 0.2,
+    },
+    'anthropic/claude-3-5-sonnet-20241022': {
+      streamCut: 0.1,
+      delay: [100, 500],
+    },
+  },
+})
+
+const gpt4 = gw('openai/gpt-4')                              // OpenAI config
+const claude = gw('anthropic/claude-3-5-sonnet-20241022')    // Anthropic config
+const other = gw('google/gemini-pro')                        // Default config
+```
+
+## Monitoring All Models
+
+Use `onChaos` to track chaos across all models:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, {
+  rateLimit: 0.15,
+  overloaded: 0.1,
+  
+  onChaos: (event) => {
+    // Fires for all models from this provider
+    console.log(`[${event.modelId}] ${event.type}`)
+    
+    if (event.type === 'rateLimit') {
+      console.log('Rate limit hit!')
+    }
+    if (event.type === 'delay' && 'ms' in event) {
+      console.log(`Delayed ${event.ms}ms`)
+    }
+  },
+})
+
+const gpt4 = provider('gpt-4')
+const gpt35 = provider('gpt-3.5-turbo')
+
+// Both models will log chaos events
+```
+
+## Combining with Presets
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelProvider, presets } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, {
+  ...presets.unstable,
+  
+  // Override specific preset values
+  rateLimit: 0.3,
+  
+  // Add monitoring
+  onChaos: (event) => {
+    console.log('Chaos:', event.type)
+  },
+  
+  // Per-model adjustments
+  models: {
+    'gpt-4': {
+      ...presets.nightmare,  // More chaos for expensive model
+    },
+  },
+})
+```
+
+## Chaos Options
+
+`CruelProviderOptions` extends all options from [cruelModel](/ai-sdk/models#chaos-options):
+
+<ParamField path="models" type="Record<string, CruelChaosOptions>">
+  Per-model configuration overrides.
+  
+  ```typescript
+  models: {
+    'gpt-4': { rateLimit: 0.3 },
+    'gpt-3.5-turbo': { streamCut: 0.1 },
+  }
+  ```
+  
+  Keys are model IDs as passed to the provider:
+  - For standard providers: `'gpt-4'`, `'claude-3-5-sonnet-20241022'`
+  - For gateway: `'openai/gpt-4'`, `'anthropic/claude-3-5-sonnet-20241022'`
+</ParamField>
+
+All other options from `CruelChaosOptions`:
+- [API Errors](/ai-sdk/models#api-errors)
+- [Content Issues](/ai-sdk/models#content-issues)
+- [Latency](/ai-sdk/models#latency)
+- [Streaming Chaos](/ai-sdk/models#streaming-chaos)
+- [Response Modification](/ai-sdk/models#response-modification)
+- [Generic Failures](/ai-sdk/models#generic-failures)
+- [Event Monitoring](/ai-sdk/models#event-monitoring)
+
+## Model ID Override
+
+Cruel respects the `MODEL` environment variable:
+
+```bash
+# Override all models from provider
+MODEL=gpt-3.5-turbo npm test
+```
+
+```typescript
+const provider = cruelProvider(openai, { rateLimit: 0.1 })
+
+// With MODEL=gpt-3.5-turbo:
+const model = provider('gpt-4')  // Actually uses gpt-3.5-turbo
+```
+
+For gateway syntax:
+```bash
+MODEL=gpt-3.5-turbo npm test
+```
+
+```typescript
+const gw = cruelProvider(gateway, { rateLimit: 0.1 })
+
+// With MODEL=gpt-3.5-turbo:
+const model = gw('openai/gpt-4')  // Uses openai/gpt-3.5-turbo
+```
+
+## When to Use
+
+<CardGroup cols={2}>
+  <Card title="Use cruelProvider When" icon="check">
+    - Testing multiple models from same provider
+    - Applying consistent chaos across your app
+    - Simulating provider-wide outages
+    - Managing chaos config in one place
+  </Card>
+  
+  <Card title="Use cruelModel When" icon="box">
+    - Testing a single model
+    - Need different chaos per model
+    - Working with models from multiple providers
+    - Fine-grained control required
+  </Card>
+</CardGroup>
+
+## Real-World Example
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+// Simulate production-like chaos
+const provider = cruelProvider(openai, {
+  // Common issues
+  rateLimit: 0.05,     // 5% rate limits
+  overloaded: 0.02,    // 2% overload
+  delay: [50, 200],    // 50-200ms latency
+  
+  // Model-specific behavior
+  models: {
+    'gpt-4': {
+      // GPT-4 is expensive and rate-limited
+      rateLimit: 0.15,
+      overloaded: 0.08,
+      delay: [100, 500],
+    },
+    'gpt-4o': {
+      // GPT-4o is faster but can have stream issues
+      streamCut: 0.05,
+      slowTokens: [20, 80],
+    },
+    'gpt-3.5-turbo': {
+      // GPT-3.5 is cheap and reliable
+      rateLimit: 0.02,
+      delay: [20, 100],
+    },
+  },
+  
+  // Monitor everything
+  onChaos: (event) => {
+    logToMetrics(event.type, event.modelId)
+  },
+})
+
+// Use throughout your app
+export const gpt4 = provider('gpt-4')
+export const gpt4o = provider('gpt-4o')
+export const gpt35 = provider('gpt-3.5-turbo')
+```
+
+## TypeScript
+
+`cruelProvider` preserves the provider type:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import type { ProviderV3 } from 'cruel/ai-sdk'
+
+const original = openai
+const wrapped = cruelProvider(original, { rateLimit: 0.1 })
+
+// Both have identical provider interface
+type Original = typeof original  // ProviderV3
+type Wrapped = typeof wrapped    // ProviderV3
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Wrapping" icon="box" href="/ai-sdk/models">
+    Learn about cruelModel
+  </Card>
+  <Card title="Middleware" icon="filter" href="/ai-sdk/middleware">
+    Use AI SDK middleware
+  </Card>
+  <Card title="Tool Chaos" icon="wrench" href="/ai-sdk/tools">
+    Inject tool failures
+  </Card>
+  <Card title="Presets" icon="sliders" href="/ai-sdk/presets">
+    Use built-in presets
+  </Card>
+</CardGroup>

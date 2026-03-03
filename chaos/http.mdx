@@ -1,0 +1,419 @@
+---
+title: 'HTTP Chaos'
+description: 'Simulate HTTP errors, status codes, rate limits, and server failures'
+---
+
+# HTTP Chaos
+
+HTTP chaos methods simulate HTTP-specific failures including status codes, rate limiting, and common server errors.
+
+## status
+
+Returns specific HTTP status codes.
+
+```typescript
+cruel.http.status(fn, code, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with HTTP status errors
+</ParamField>
+
+<ParamField path="code" type="number | number[]" required>
+  HTTP status code or array of codes to randomly select from
+</ParamField>
+
+<ParamField path="rate" type="number" default="1">
+  Probability of returning the status code (0 to 1). Default is 1 (100%)
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Single Status Code
+import { cruel } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  return fetch(`/api/users/${id}`).then(r => r.json())
+}
+
+// Always return 404
+const notFoundFetch = cruel.http.status(fetchUser, 404)
+
+try {
+  await notFoundFetch('123')
+} catch (error) {
+  // CruelHttpError with status 404
+  console.error('Status:', error.status) // 404
+}
+```
+
+```typescript Multiple Status Codes
+// Randomly return 500, 502, or 503
+const serverErrorFetch = cruel.http.status(
+  fetchUser,
+  [500, 502, 503],
+  1
+)
+```
+
+```typescript With Probability
+// 30% chance of returning 429 (rate limit)
+const occasionalRateLimit = cruel.http.status(
+  fetchUser,
+  429,
+  0.3
+)
+```
+</CodeGroup>
+
+---
+
+## rateLimit
+
+Simulates HTTP 429 rate limiting errors.
+
+```typescript
+cruel.http.rateLimit(fn, options)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with rate limiting
+</ParamField>
+
+<ParamField path="options" type="number | object" default="0.1">
+  Rate limit probability (number) or configuration object:
+  - `rate`: Probability of rate limit (0 to 1)
+  - `retryAfter`: Retry-After header value in seconds
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Simple Rate Limit
+import { cruel } from 'cruel'
+
+const apiCall = async (endpoint: string) => {
+  return fetch(`/api${endpoint}`).then(r => r.json())
+}
+
+// 10% chance of rate limiting
+const rateLimitedAPI = cruel.http.rateLimit(apiCall, 0.1)
+
+try {
+  await rateLimitedAPI('/data')
+} catch (error) {
+  // CruelRateLimitError
+  console.error('Rate limited!')
+}
+```
+
+```typescript With Retry-After
+// Rate limit with retry-after header
+const rateLimitedAPI = cruel.http.rateLimit(apiCall, {
+  rate: 0.15,
+  retryAfter: 30 // Retry after 30 seconds
+})
+
+try {
+  await rateLimitedAPI('/data')
+} catch (error) {
+  if (error.name === 'CruelRateLimitError') {
+    console.log('Retry after:', error.retryAfter, 'seconds')
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## serverError
+
+Randomly returns 5xx server errors.
+
+```typescript
+cruel.http.serverError(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with server errors
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of server error (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Behavior
+
+Randomly returns one of:
+- `500` Internal Server Error
+- `502` Bad Gateway
+- `503` Service Unavailable
+- `504` Gateway Timeout
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const submitForm = async (data: FormData) => {
+  return fetch('/api/submit', {
+    method: 'POST',
+    body: data
+  })
+}
+
+// 20% chance of server error
+const flakySubmit = cruel.http.serverError(submitForm, 0.2)
+
+try {
+  await flakySubmit(formData)
+} catch (error) {
+  // CruelHttpError with status 500, 502, 503, or 504
+  console.error('Server error:', error.status)
+}
+```
+
+---
+
+## clientError
+
+Randomly returns 4xx client errors.
+
+```typescript
+cruel.http.clientError(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with client errors
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of client error (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Behavior
+
+Randomly returns one of:
+- `400` Bad Request
+- `401` Unauthorized
+- `403` Forbidden
+- `404` Not Found
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const deleteResource = async (id: string) => {
+  return fetch(`/api/resources/${id}`, { method: 'DELETE' })
+}
+
+// 15% chance of client error
+const flakyDelete = cruel.http.clientError(deleteResource, 0.15)
+
+try {
+  await flakyDelete('123')
+} catch (error) {
+  // CruelHttpError with status 400, 401, 403, or 404
+  if (error.status === 404) {
+    console.log('Resource not found')
+  }
+}
+```
+
+---
+
+## badGateway
+
+Returns HTTP 502 Bad Gateway errors.
+
+```typescript
+cruel.http.badGateway(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of 502 error (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const proxyRequest = async (url: string) => {
+  return fetch(`/proxy?url=${url}`)
+}
+
+// 5% chance of bad gateway
+const flakyProxy = cruel.http.badGateway(proxyRequest, 0.05)
+
+try {
+  await flakyProxy('https://api.example.com')
+} catch (error) {
+  // CruelHttpError with status 502
+  console.error('Bad gateway:', error.status)
+}
+```
+
+---
+
+## serviceUnavailable
+
+Returns HTTP 503 Service Unavailable errors.
+
+```typescript
+cruel.http.serviceUnavailable(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of 503 error (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const healthCheck = async () => {
+  return fetch('/api/health')
+}
+
+// 8% chance service is unavailable
+const flakyHealth = cruel.http.serviceUnavailable(healthCheck, 0.08)
+
+try {
+  await flakyHealth()
+} catch (error) {
+  // CruelHttpError with status 503
+  console.error('Service unavailable')
+}
+```
+
+---
+
+## gatewayTimeout
+
+Returns HTTP 504 Gateway Timeout errors.
+
+```typescript
+cruel.http.gatewayTimeout(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of 504 error (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const longRunningQuery = async (query: string) => {
+  return fetch('/api/query', {
+    method: 'POST',
+    body: JSON.stringify({ query })
+  })
+}
+
+// 12% chance of gateway timeout
+const timeoutQuery = cruel.http.gatewayTimeout(longRunningQuery, 0.12)
+
+try {
+  await timeoutQuery('SELECT * FROM huge_table')
+} catch (error) {
+  // CruelHttpError with status 504
+  console.error('Gateway timeout')
+}
+```
+
+---
+
+## Combining HTTP Chaos
+
+You can layer multiple HTTP chaos methods:
+
+```typescript
+import { cruel } from 'cruel'
+
+const apiCall = async () => { /* ... */ }
+
+// Combine rate limiting + server errors
+let chaotic = apiCall
+chaotic = cruel.http.rateLimit(chaotic, 0.05)
+chaotic = cruel.http.serverError(chaotic, 0.1)
+chaotic = cruel.http.gatewayTimeout(chaotic, 0.08)
+
+await chaotic()
+```
+
+## Real-World Scenarios
+
+<Tabs>
+  <Tab title="Overloaded API">
+    ```typescript
+    // Simulate overloaded service
+    const overloadedAPI = cruel.http.serviceUnavailable(
+      cruel.http.rateLimit(apiCall, 0.2),
+      0.15
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Flaky Gateway">
+    ```typescript
+    // Proxy with occasional gateway issues
+    const flakyGateway = cruel.http.badGateway(
+      cruel.http.gatewayTimeout(proxyCall, 0.1),
+      0.08
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Authentication Issues">
+    ```typescript
+    // Random auth failures
+    const authAPI = cruel.http.status(
+      apiCall,
+      [401, 403],
+      0.05
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Error Objects
+
+HTTP chaos methods throw specific error types:
+
+```typescript
+try {
+  await flakyAPI()
+} catch (error) {
+  if (error.name === 'CruelHttpError') {
+    console.log('HTTP status:', error.status)
+    console.log('Error code:', error.code) // 'CRUEL_HTTP'
+  }
+  
+  if (error.name === 'CruelRateLimitError') {
+    console.log('Rate limited')
+    console.log('Retry after:', error.retryAfter, 'seconds')
+  }
+}
+```
+
+## Source Reference
+
+HTTP methods are defined in `index.ts:385-427`.

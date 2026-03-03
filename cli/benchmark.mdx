@@ -1,0 +1,267 @@
+---
+title: Benchmark Command
+description: Benchmark endpoint performance with concurrent requests using the Cruel CLI
+---
+
+The `benchmark` command runs performance tests against an endpoint with concurrent requests, measuring throughput and latency without chaos injection.
+
+## Syntax
+
+```bash
+cruel benchmark <url> [options]
+```
+
+## Arguments
+
+<ParamField path="url" type="string" required>
+  The endpoint URL to benchmark (e.g., https://api.example.com/users)
+</ParamField>
+
+## Options
+
+<ParamField path="--count" type="number" default="100">
+  Total number of requests to send during the benchmark
+</ParamField>
+
+<ParamField path="--concurrent" type="number" default="10">
+  Number of concurrent requests to run in parallel
+</ParamField>
+
+## Basic Usage
+
+<CodeGroup>
+```bash Simple benchmark
+cruel benchmark https://api.example.com
+```
+
+```bash Custom request count
+cruel benchmark https://api.example.com --count 500
+```
+
+```bash High concurrency
+cruel benchmark https://api.example.com --count 1000 --concurrent 50
+```
+
+```bash Low concurrency
+cruel benchmark https://api.example.com --count 100 --concurrent 5
+```
+</CodeGroup>
+
+## Output Example
+
+```bash
+$ cruel benchmark https://api.example.com --count 100 --concurrent 10
+
+benchmarking https://api.example.com
+requests: 100, concurrent: 10
+
+10/100 20/100 30/100 40/100 50/100 60/100 70/100 80/100 90/100 100/100 
+
+results:
+  success: 98/100
+  failed: 2/100
+  rps: 45.23 req/s
+  total: 2.21s
+
+latency:
+  avg: 187ms
+  min: 76ms
+  max: 542ms
+  p50: 165ms
+  p95: 398ms
+  p99: 521ms
+```
+
+## Progress Feedback
+
+During the benchmark, progress is shown every 10 requests:
+
+```
+10/100 20/100 30/100 40/100 50/100 60/100 70/100 80/100 90/100 100/100
+```
+
+This helps you track the benchmark progress in real-time.
+
+## Results Breakdown
+
+### Performance Metrics
+
+- **success**: Number of successful requests out of total
+- **failed**: Number of failed requests
+- **rps**: Requests per second (throughput)
+- **total**: Total time taken for all requests
+
+### Latency Metrics
+
+- **avg**: Average response time across all requests
+- **min**: Minimum response time observed
+- **max**: Maximum response time observed
+- **p50**: 50th percentile (median) - half of requests were faster
+- **p95**: 95th percentile - 95% of requests were faster
+- **p99**: 99th percentile - 99% of requests were faster
+
+## Concurrency Behavior
+
+The benchmark maintains the specified concurrency level throughout the test:
+
+```bash
+# 10 requests running at any given time
+cruel benchmark https://api.example.com --count 100 --concurrent 10
+```
+
+When a request completes, a new one starts immediately to maintain the concurrency level until all requests are sent.
+
+## Timeout Configuration
+
+Each request has a 30-second timeout. Requests that exceed this are counted as failures:
+
+```typescript
+// From cli.ts:214
+const controller = new AbortController()
+const timeoutId = setTimeout(() => controller.abort(), 30000)
+```
+
+## Use Cases
+
+### Baseline Performance
+
+Establish baseline performance metrics:
+
+```bash
+cruel benchmark https://api.example.com --count 200 --concurrent 10
+```
+
+### Load Testing
+
+Test how your API handles sustained load:
+
+```bash
+cruel benchmark https://api.example.com --count 5000 --concurrent 100
+```
+
+### Capacity Planning
+
+Determine maximum throughput:
+
+```bash
+cruel benchmark https://api.example.com --count 1000 --concurrent 200
+```
+
+### Compare Endpoints
+
+Benchmark different endpoints to compare performance:
+
+<CodeGroup>
+```bash Endpoint A
+cruel benchmark https://api.example.com/users --count 500 --concurrent 25
+```
+
+```bash Endpoint B
+cruel benchmark https://api.example.com/posts --count 500 --concurrent 25
+```
+</CodeGroup>
+
+### Latency Testing
+
+Test with low concurrency to measure true latency:
+
+```bash
+cruel benchmark https://api.example.com --count 100 --concurrent 1
+```
+
+## Understanding Throughput
+
+The `rps` (requests per second) metric shows throughput:
+
+```bash
+rps: 45.23 req/s
+```
+
+This is calculated as:
+
+```typescript
+// From cli.ts:247
+const rps = (success / totalTime) * 1000
+```
+
+Higher RPS indicates better throughput.
+
+## Interpreting Percentiles
+
+Percentiles help understand latency distribution:
+
+- **p50 (median)**: Typical user experience
+- **p95**: Worst case for 95% of users
+- **p99**: Worst case for 99% of users
+
+**Example:**
+```
+p50: 165ms   # Half of users see ≤165ms
+p95: 398ms   # 95% of users see ≤398ms
+p99: 521ms   # 99% of users see ≤521ms
+```
+
+Large gaps between p50 and p99 indicate high latency variance.
+
+## Error Handling
+
+If you forget to provide a URL:
+
+```bash
+$ cruel benchmark
+error: url required
+usage: cruel benchmark <url> [options]
+```
+
+## Benchmark vs Test
+
+| Feature | benchmark | test |
+|---------|-----------|------|
+| Purpose | Measure performance | Test resilience |
+| Chaos injection | No | Yes |
+| Concurrency | Yes | No |
+| Default count | 100 | 10 |
+| Retries | No | Optional |
+| Circuit breaker | No | Optional |
+
+Use `benchmark` for performance testing and `test` for chaos testing.
+
+## Best Practices
+
+### Start Small
+
+Begin with low concurrency and count:
+
+```bash
+cruel benchmark https://api.example.com --count 50 --concurrent 5
+```
+
+### Increase Gradually
+
+Increase load gradually to find limits:
+
+```bash
+cruel benchmark https://api.example.com --count 100 --concurrent 10
+cruel benchmark https://api.example.com --count 200 --concurrent 20
+cruel benchmark https://api.example.com --count 500 --concurrent 50
+```
+
+### Monitor Your Service
+
+Watch server metrics (CPU, memory, database connections) while benchmarking.
+
+### Run Multiple Times
+
+Run benchmarks multiple times for consistency:
+
+```bash
+for i in {1..5}; do
+  echo "Run $i"
+  cruel benchmark https://api.example.com --count 200 --concurrent 20
+  sleep 5
+done
+```
+
+### Consider Network Latency
+
+Results include network latency. Run from different locations for complete picture.

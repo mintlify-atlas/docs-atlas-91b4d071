@@ -1,0 +1,165 @@
+---
+title: CLI Overview
+description: Command-line interface for chaos testing with Cruel
+---
+
+The Cruel CLI provides a powerful command-line interface for chaos testing your APIs and services. Run tests, benchmarks, and predefined scenarios directly from your terminal.
+
+## Installation
+
+Install Cruel globally to use the CLI:
+
+```bash
+npm install -g cruel
+```
+
+Or run directly with npx:
+
+```bash
+npx cruel test https://api.example.com
+```
+
+## Quick Start
+
+```bash
+# Test an endpoint with 10% failure rate
+cruel test https://api.example.com --fail 0.1 --count 20
+
+# Benchmark endpoint performance
+cruel benchmark https://api.example.com --count 100 --concurrent 10
+
+# Run a chaos scenario
+cruel scenario outage --duration 5000
+```
+
+## Available Commands
+
+<CardGroup cols={2}>
+  <Card title="test" icon="flask" href="/cli/test">
+    Test endpoints with chaos injection
+  </Card>
+  <Card title="benchmark" icon="gauge" href="/cli/benchmark">
+    Benchmark endpoint performance
+  </Card>
+  <Card title="scenarios" icon="diagram-project" href="/cli/scenarios">
+    Run predefined chaos scenarios
+  </Card>
+  <Card title="stats" icon="chart-line">
+    View chaos testing statistics
+  </Card>
+</CardGroup>
+
+## Global Options
+
+These options work across all commands:
+
+<ParamField path="--fail" type="number">
+  Failure rate between 0 and 1 (e.g., 0.1 = 10% failure rate)
+</ParamField>
+
+<ParamField path="--delay" type="number | string">
+  Delay in milliseconds or min-max range (e.g., 100 or "100-500")
+</ParamField>
+
+<ParamField path="--timeout" type="number">
+  Timeout rate between 0 and 1 (e.g., 0.05 = 5% timeout rate)
+</ParamField>
+
+<ParamField path="--preset" type="string">
+  Use a predefined chaos configuration preset
+  
+  **Available presets:** development, staging, production, harsh, nightmare, apocalypse
+</ParamField>
+
+<ParamField path="--retry" type="number">
+  Number of retry attempts for failed requests
+</ParamField>
+
+<ParamField path="--circuit" type="number">
+  Circuit breaker failure threshold before opening circuit
+</ParamField>
+
+## Chaos Presets
+
+Cruel includes several built-in presets for different testing scenarios:
+
+```bash
+# View all available presets
+cruel presets
+```
+
+**Available Presets:**
+
+- **development** - Light chaos for local development
+- **staging** - Moderate chaos for staging environments
+- **production** - Realistic production chaos patterns
+- **harsh** - High chaos for stress testing
+- **nightmare** - Extreme chaos conditions
+- **apocalypse** - Maximum chaos for worst-case scenarios
+
+## Usage Examples
+
+<CodeGroup>
+```bash Test with preset
+cruel test https://api.example.com --preset nightmare
+```
+
+```bash Test with custom chaos
+cruel test https://api.example.com --fail 0.2 --delay 500 --timeout 0.1
+```
+
+```bash Test with retry logic
+cruel test https://api.example.com --fail 0.3 --retry 3
+```
+
+```bash Test with circuit breaker
+cruel test https://api.example.com --fail 0.5 --circuit 5
+```
+</CodeGroup>
+
+## Output Format
+
+The CLI provides visual feedback with colored output:
+
+- `.` - Successful request (green)
+- `X` - Failed request (red)
+- `T` - Timed out request (yellow)
+
+## Statistics
+
+View accumulated chaos statistics:
+
+```bash
+cruel stats
+```
+
+This shows:
+- Total calls made
+- Number of failures injected
+- Number of timeouts
+- Number of delays
+- Corrupted responses
+- Rate limited requests
+- Streams cut
+
+## Version
+
+Check your Cruel version:
+
+```bash
+cruel version
+# or
+cruel --version
+cruel -v
+```
+
+## Help
+
+Get help on any command:
+
+```bash
+cruel help
+# or
+cruel --help
+cruel -h
+```

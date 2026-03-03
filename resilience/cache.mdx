@@ -1,0 +1,536 @@
+---
+title: Cache
+description: Cache function results with TTL to reduce redundant operations
+---
+
+## Overview
+
+The Cache pattern stores function results in memory with a time-to-live (TTL), reducing redundant operations and improving performance. Cached results are returned immediately when available and valid, avoiding expensive computations or network requests.
+
+## When to Use
+
+- Expensive computations that don't change frequently
+- API responses that can be cached
+- Database queries with stable data
+- User preferences and configuration
+- Any pure function with deterministic outputs
+
+## API Reference
+
+### Function Signature
+
+```typescript
+function withCache<T extends AnyFn>(fn: T, options: CacheOptions<ReturnType<T>>): T
+```
+
+### Options
+
+<ParamField path="ttl" type="number" required>
+  Time-to-live in milliseconds. Cached values expire after this duration.
+</ParamField>
+
+<ParamField path="key" type="(...args: unknown[]) => string">
+  Function to generate cache keys from function arguments. If not provided, arguments are JSON stringified. Use a custom key function for complex objects or when you need control over cache granularity.
+</ParamField>
+
+<ParamField path="onHit" type="(key: string) => void">
+  Callback executed when a cached value is returned (cache hit).
+</ParamField>
+
+<ParamField path="onMiss" type="(key: string) => void">
+  Callback executed when no cached value exists and the function is executed (cache miss).
+</ParamField>
+
+## Examples
+
+### Basic Caching
+
+```typescript
+import { withCache } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  const response = await fetch(`https://api.example.com/users/${id}`)
+  return response.json()
+}
+
+// Cache for 5 minutes
+const cachedFetch = withCache(fetchUser, {
+  ttl: 5 * 60 * 1000,
+})
+
+// First call - fetches from API
+const user1 = await cachedFetch('123')
+
+// Second call within 5 minutes - returns cached value
+const user2 = await cachedFetch('123')
+```
+
+### With Cache Callbacks
+
+```typescript
+const cachedAPI = withCache(apiCall, {
+  ttl: 60000,  // 1 minute
+  onHit: (key) => {
+    console.log(`Cache hit for key: ${key}`)
+    metrics.increment('cache.hit')
+  },
+  onMiss: (key) => {
+    console.log(`Cache miss for key: ${key}`)
+    metrics.increment('cache.miss')
+  },
+})
+```
+
+### Custom Cache Key
+
+```typescript
+interface QueryOptions {
+  userId: string
+  includeDeleted?: boolean
+  limit?: number
+}
+
+const queryUsers = withCache(
+  async (options: QueryOptions) => {
+    return database.query('users', options)
+  },
+  {
+    ttl: 60000,
+    // Only cache based on userId, ignore other options
+    key: (options: QueryOptions) => `user:${options.userId}`,
+  }
+)
+```
+
+### Multi-Argument Function
+
+```typescript
+const calculatePrice = withCache(
+  async (productId: string, quantity: number, currency: string) => {
+    return priceService.calculate(productId, quantity, currency)
+  },
+  {
+    ttl: 5 * 60 * 1000,
+    key: (productId, quantity, currency) => {
+      return `price:${productId}:${quantity}:${currency}`
+    },
+  }
+)
+```
+
+### Configuration Cache
+
+```typescript
+const getConfig = withCache(
+  async () => {
+    const response = await fetch('https://api.example.com/config')
+    return response.json()
+  },
+  {
+    ttl: 10 * 60 * 1000,  // 10 minutes
+    key: () => 'app-config',  // Single cache key for all calls
+  }
+)
+
+// All calls share the same cached config
+const config1 = await getConfig()
+const config2 = await getConfig()  // Cache hit
+```
+
+### Per-User Caching
+
+```typescript
+const getUserPreferences = withCache(
+  async (userId: string) => {
+    return database.getUserPreferences(userId)
+  },
+  {
+    ttl: 5 * 60 * 1000,
+    key: (userId) => `prefs:${userId}`,
+  }
+)
+
+// Each user's preferences are cached separately
+await getUserPreferences('user1')  // Miss, fetch from DB
+await getUserPreferences('user1')  // Hit, from cache
+await getUserPreferences('user2')  // Miss, different user
+```
+
+## Combining with Other Patterns
+
+### Cache + Fallback
+
+```typescript
+import { withCache, withFallback } from 'cruel'
+
+// Try cache/API, fall back to stale data on error
+const resilientAPI = withFallback(
+  withCache(fetchData, { ttl: 60000 }),
+  {
+    fallback: () => getStaleDataFromStorage(),
+  }
+)
+```
+
+### Cache + Retry
+
+```typescript
+import { withCache, withRetry } from 'cruel'
+
+// Cache successful retries
+const resilientAPI = withCache(
+  withRetry(apiCall, {
+    attempts: 3,
+    backoff: 'exponential',
+  }),
+  {
+    ttl: 5 * 60 * 1000,
+  }
+)
+```
+
+### Cache + Timeout
+
+```typescript
+import { withCache, withTimeout } from 'cruel'
+
+// Cache results from successful timeouts
+const timedAPI = withCache(
+  withTimeout(apiCall, { ms: 5000 }),
+  {
+    ttl: 60000,
+  }
+)
+```
+
+### With Compose
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientAPI = cruel.compose(apiCall, {
+  cache: {
+    ttl: 60000,
+    key: (id) => `data:${id}`,
+    onHit: () => console.log('Cache hit'),
+  },
+  retry: {
+    attempts: 3,
+    backoff: 'exponential',
+  },
+  timeoutMs: 5000,
+})
+```
+
+## Advanced Examples
+
+### LRU Cache with Size Limit
+
+```typescript
+import { LRUCache } from 'lru-cache'
+
+function withLRUCache<T extends AnyFn>(
+  fn: T,
+  options: { ttl: number; maxSize: number }
+): T {
+  const cache = new LRUCache<string, ReturnType<T>>({
+    max: options.maxSize,
+    ttl: options.ttl,
+  })
+
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    const key = JSON.stringify(args)
+    const cached = cache.get(key)
+
+    if (cached !== undefined) {
+      return cached
+    }
+
+    const result = await fn(...args)
+    cache.set(key, result as ReturnType<T>)
+    return result as ReturnType<T>
+  }
+}
+
+const cachedAPI = withLRUCache(apiCall, {
+  ttl: 60000,
+  maxSize: 1000,
+})
+```
+
+### Multi-Level Cache
+
+```typescript
+class MultiLevelCache<T> {
+  private l1Cache = new Map<string, { value: T; expires: number }>()
+  private l2Cache: Map<string, { value: T; expires: number }>
+
+  constructor(
+    private l1TTL: number,
+    private l2TTL: number
+  ) {
+    this.l2Cache = new Map()
+  }
+
+  async get(key: string): Promise<T | undefined> {
+    // Try L1 (memory)
+    const l1 = this.l1Cache.get(key)
+    if (l1 && l1.expires > Date.now()) {
+      return l1.value
+    }
+
+    // Try L2 (Redis, disk, etc.)
+    const l2 = this.l2Cache.get(key)
+    if (l2 && l2.expires > Date.now()) {
+      // Promote to L1
+      this.l1Cache.set(key, {
+        value: l2.value,
+        expires: Date.now() + this.l1TTL,
+      })
+      return l2.value
+    }
+
+    return undefined
+  }
+
+  set(key: string, value: T) {
+    this.l1Cache.set(key, {
+      value,
+      expires: Date.now() + this.l1TTL,
+    })
+    this.l2Cache.set(key, {
+      value,
+      expires: Date.now() + this.l2TTL,
+    })
+  }
+}
+```
+
+### Cache Warming
+
+```typescript
+function createWarmableCache<T extends AnyFn>(
+  fn: T,
+  options: { ttl: number; warmupData?: Array<Parameters<T>> }
+): T & { warm: () => Promise<void> } {
+  const cached = withCache(fn, { ttl: options.ttl })
+
+  const warm = async () => {
+    if (!options.warmupData) return
+
+    console.log(`Warming cache with ${options.warmupData.length} items`)
+    await Promise.all(
+      options.warmupData.map(args => cached(...args))
+    )
+  }
+
+  return Object.assign(cached, { warm })
+}
+
+const cachedAPI = createWarmableCache(fetchUser, {
+  ttl: 5 * 60 * 1000,
+  warmupData: [['user1'], ['user2'], ['user3']],
+})
+
+// Warm cache on startup
+await cachedAPI.warm()
+```
+
+### Conditional Caching
+
+```typescript
+function withConditionalCache<T extends AnyFn>(
+  fn: T,
+  options: {
+    ttl: number
+    shouldCache: (result: ReturnType<T>) => boolean
+  }
+): T {
+  const cache = new Map<string, { value: ReturnType<T>; expires: number }>()
+
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    const key = JSON.stringify(args)
+    const cached = cache.get(key)
+
+    if (cached && cached.expires > Date.now()) {
+      return cached.value
+    }
+
+    const result = await fn(...args)
+
+    // Only cache if condition is met
+    if (options.shouldCache(result as ReturnType<T>)) {
+      cache.set(key, {
+        value: result as ReturnType<T>,
+        expires: Date.now() + options.ttl,
+      })
+    }
+
+    return result as ReturnType<T>
+  }
+}
+
+const cachedAPI = withConditionalCache(apiCall, {
+  ttl: 60000,
+  shouldCache: (result) => {
+    // Don't cache errors or empty results
+    return result && result.status === 'success'
+  },
+})
+```
+
+### Cache Invalidation
+
+```typescript
+function createInvalidatableCache<T extends AnyFn>(
+  fn: T,
+  ttl: number
+): T & {
+  invalidate: (key?: string) => void
+  invalidateAll: () => void
+} {
+  const cache = new Map<string, { value: ReturnType<T>; expires: number }>()
+
+  const wrapped = async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    const key = JSON.stringify(args)
+    const cached = cache.get(key)
+
+    if (cached && cached.expires > Date.now()) {
+      return cached.value
+    }
+
+    const result = await fn(...args)
+    cache.set(key, { value: result as ReturnType<T>, expires: Date.now() + ttl })
+    return result as ReturnType<T>
+  }
+
+  return Object.assign(wrapped as T, {
+    invalidate: (key?: string) => {
+      if (key) {
+        cache.delete(key)
+      }
+    },
+    invalidateAll: () => {
+      cache.clear()
+    },
+  })
+}
+
+const cachedAPI = createInvalidatableCache(fetchUser, 60000)
+
+// Invalidate specific key
+cachedAPI.invalidate(JSON.stringify(['user1']))
+
+// Invalidate all
+cachedAPI.invalidateAll()
+```
+
+### Stale-While-Revalidate
+
+```typescript
+function withSWR<T extends AnyFn>(
+  fn: T,
+  options: { freshFor: number; staleFor: number }
+): T {
+  const cache = new Map<string, {
+    value: ReturnType<T>
+    fetchedAt: number
+    revalidating: boolean
+  }>()
+
+  return async (...args: Parameters<T>): Promise<ReturnType<T>> => {
+    const key = JSON.stringify(args)
+    const cached = cache.get(key)
+    const now = Date.now()
+
+    if (cached) {
+      const age = now - cached.fetchedAt
+
+      // Fresh - return immediately
+      if (age < options.freshFor) {
+        return cached.value
+      }
+
+      // Stale but acceptable - return and revalidate in background
+      if (age < options.staleFor) {
+        if (!cached.revalidating) {
+          cached.revalidating = true
+          fn(...args).then(result => {
+            cache.set(key, {
+              value: result as ReturnType<T>,
+              fetchedAt: Date.now(),
+              revalidating: false,
+            })
+          }).catch(() => {
+            cached.revalidating = false
+          })
+        }
+        return cached.value
+      }
+    }
+
+    // No cache or too stale - fetch fresh
+    const result = await fn(...args)
+    cache.set(key, {
+      value: result as ReturnType<T>,
+      fetchedAt: Date.now(),
+      revalidating: false,
+    })
+    return result as ReturnType<T>
+  }
+}
+
+const swrAPI = withSWR(fetchData, {
+  freshFor: 30000,   // Fresh for 30s
+  staleFor: 300000,  // Acceptable stale for 5min
+})
+```
+
+## Best Practices
+
+- **Choose appropriate TTLs**: Balance freshness with cache effectiveness
+- **Use custom keys wisely**: Consider what makes results unique
+- **Monitor cache hit rates**: Low hit rates indicate ineffective caching
+- **Don't cache errors**: Only cache successful results
+- **Consider memory usage**: Long TTLs and many keys consume memory
+- **Cache pure functions**: Deterministic functions are ideal for caching
+- **Invalidate when needed**: Provide ways to invalidate stale data
+- **Test with and without cache**: Ensure correctness with cache disabled
+
+## TTL Guidelines
+
+| Data Type | Recommended TTL | Reasoning |
+|-----------|----------------|------------|
+| User sessions | 15-30 minutes | Balance security and UX |
+| API responses | 1-5 minutes | Depends on data volatility |
+| Configuration | 10-60 minutes | Changes infrequently |
+| Static content | 24 hours | Rarely changes |
+| Search results | 30-60 seconds | Real-time expectations |
+| User preferences | 5-15 minutes | Changes occasionally |
+| Computed reports | 1-24 hours | Expensive to generate |
+
+## Cache Strategies
+
+### Cache-Aside (Lazy Loading)
+```typescript
+withCache(fn, { ttl: 60000 })  // Default behavior
+```
+Load on first access, cache for subsequent requests
+
+### Write-Through
+```typescript
+// Update cache when writing
+async function updateUser(user) {
+  await database.update(user)
+  cache.set(user.id, user)  // Update cache
+}
+```
+
+### Write-Behind
+```typescript
+// Write to cache immediately, database asynchronously
+function updateUser(user) {
+  cache.set(user.id, user)
+  queueDatabaseWrite(user)
+}
+```

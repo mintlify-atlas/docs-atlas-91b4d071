@@ -1,0 +1,609 @@
+---
+title: TypeScript Types
+description: TypeScript types and interfaces for Cruel chaos testing
+---
+
+Cruel exports comprehensive TypeScript types for all configuration options and interfaces.
+
+## Core Options
+
+### ChaosOptions
+
+Base chaos configuration options used throughout Cruel.
+
+```typescript
+interface ChaosOptions {
+  fail?: number
+  delay?: number | [number, number]
+  timeout?: number
+  jitter?: number
+  corrupt?: number
+  spike?: number | [number, number]
+  enabled?: boolean
+}
+```
+
+<ParamField path="fail" type="number">
+  Probability (0-1) of random failures
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]">
+  Fixed delay in ms or range `[min, max]` for random delay
+</ParamField>
+
+<ParamField path="timeout" type="number">
+  Probability (0-1) of operations timing out (never completing)
+</ParamField>
+
+<ParamField path="jitter" type="number">
+  Random jitter to add to delays (0 to `jitter` ms)
+</ParamField>
+
+<ParamField path="corrupt" type="number">
+  Probability (0-1) of corrupting string responses
+</ParamField>
+
+<ParamField path="spike" type="number | [number, number]">
+  Additional delay spike in ms or range `[min, max]`
+</ParamField>
+
+<ParamField path="enabled" type="boolean">
+  Whether chaos is enabled (allows conditional chaos)
+</ParamField>
+
+## Network Options
+
+### NetworkOptions
+
+Extends `ChaosOptions` with network-specific chaos.
+
+```typescript
+interface NetworkOptions extends ChaosOptions {
+  latency?: number | [number, number]
+  packetLoss?: number
+  bandwidth?: number
+  disconnect?: number
+  dns?: number
+}
+```
+
+<ParamField path="latency" type="number | [number, number]">
+  Network latency in ms or range
+</ParamField>
+
+<ParamField path="packetLoss" type="number">
+  Probability (0-1) of packet loss
+</ParamField>
+
+<ParamField path="bandwidth" type="number">
+  Simulated bandwidth limit in kbps
+</ParamField>
+
+<ParamField path="disconnect" type="number">
+  Probability (0-1) of connection disconnect
+</ParamField>
+
+<ParamField path="dns" type="number">
+  Probability (0-1) of DNS failures
+</ParamField>
+
+### HttpOptions
+
+Extends `ChaosOptions` with HTTP-specific chaos.
+
+```typescript
+interface HttpOptions extends ChaosOptions {
+  status?: number | number[]
+  rateLimit?: number | { rate: number; status?: number; retryAfter?: number }
+  slowBody?: number | [number, number]
+  truncate?: number
+  malformed?: number
+  headers?: Record<string, string>
+}
+```
+
+<ParamField path="status" type="number | number[]">
+  HTTP status code(s) to return
+</ParamField>
+
+<ParamField path="rateLimit" type="number | object">
+  Rate limit probability or configuration object with `rate`, `status`, and `retryAfter`
+</ParamField>
+
+<ParamField path="slowBody" type="number | [number, number]">
+  Delay for response body in ms or range
+</ParamField>
+
+<ParamField path="truncate" type="number">
+  Probability (0-1) of truncating response body
+</ParamField>
+
+<ParamField path="malformed" type="number">
+  Probability (0-1) of returning malformed response
+</ParamField>
+
+<ParamField path="headers" type="Record<string, string>">
+  Custom headers to inject
+</ParamField>
+
+### StreamOptions
+
+Extends `ChaosOptions` with streaming-specific chaos.
+
+```typescript
+interface StreamOptions extends ChaosOptions {
+  cut?: number
+  pause?: number | [number, number]
+  reorder?: number
+  duplicate?: number
+  dropChunks?: number
+  corruptChunks?: number
+}
+```
+
+<ParamField path="cut" type="number">
+  Probability (0-1) of cutting stream mid-transfer
+</ParamField>
+
+<ParamField path="pause" type="number | [number, number]">
+  Pause duration in ms or range
+</ParamField>
+
+<ParamField path="reorder" type="number">
+  Probability (0-1) of reordering chunks
+</ParamField>
+
+<ParamField path="duplicate" type="number">
+  Probability (0-1) of duplicating chunks
+</ParamField>
+
+<ParamField path="dropChunks" type="number">
+  Probability (0-1) of dropping chunks
+</ParamField>
+
+<ParamField path="corruptChunks" type="number">
+  Probability (0-1) of corrupting chunks
+</ParamField>
+
+## AI SDK Options
+
+### AIOptions
+
+Extends `ChaosOptions` with AI-specific chaos for language models.
+
+```typescript
+interface AIOptions extends ChaosOptions {
+  rateLimit?: number | { rate: number; retryAfter?: number }
+  overloaded?: number
+  contextLength?: number
+  contentFilter?: number
+  modelUnavailable?: number
+  tokenLimit?: number
+  streamCut?: number
+  slowTokens?: number | [number, number]
+  partialResponse?: number
+  invalidJson?: number
+}
+```
+
+<ParamField path="rateLimit" type="number | object">
+  Rate limit probability or configuration with `rate` and `retryAfter`
+</ParamField>
+
+<ParamField path="overloaded" type="number">
+  Probability (0-1) of model being overloaded
+</ParamField>
+
+<ParamField path="contextLength" type="number">
+  Probability (0-1) of context length errors
+</ParamField>
+
+<ParamField path="contentFilter" type="number">
+  Probability (0-1) of content filter triggering
+</ParamField>
+
+<ParamField path="modelUnavailable" type="number">
+  Probability (0-1) of model being unavailable
+</ParamField>
+
+<ParamField path="tokenLimit" type="number">
+  Token limit for responses
+</ParamField>
+
+<ParamField path="streamCut" type="number">
+  Probability (0-1) of cutting token streams
+</ParamField>
+
+<ParamField path="slowTokens" type="number | [number, number]">
+  Delay per token in ms or range
+</ParamField>
+
+<ParamField path="partialResponse" type="number">
+  Probability (0-1) of returning partial responses
+</ParamField>
+
+<ParamField path="invalidJson" type="number">
+  Probability (0-1) of returning invalid JSON
+</ParamField>
+
+### CruelModelOptions
+
+Options for `cruelModel()` function.
+
+```typescript
+type CruelModelOptions = CruelChaosOptions
+
+interface CruelChaosOptions {
+  onChaos?: (event: ChaosEvent) => void
+  fail?: number
+  delay?: number | [number, number]
+  timeout?: number
+  rateLimit?: number | { rate: number; retryAfter?: number }
+  overloaded?: number
+  contextLength?: number
+  contentFilter?: number
+  modelUnavailable?: number
+  invalidApiKey?: number
+  quotaExceeded?: number
+  streamCut?: number
+  slowTokens?: number | [number, number]
+  partialResponse?: number
+  corruptChunks?: number
+  toolFailure?: number
+  toolTimeout?: number
+  emptyResponse?: number
+  finishReason?: LanguageModelV3UnifiedFinishReason
+  tokenUsage?: { inputTokens?: number; outputTokens?: number }
+}
+```
+
+<ParamField path="onChaos" type="(event: ChaosEvent) => void">
+  Callback function invoked when chaos events occur
+</ParamField>
+
+<ParamField path="toolFailure" type="number">
+  Probability (0-1) of tool execution failures
+</ParamField>
+
+<ParamField path="toolTimeout" type="number">
+  Probability (0-1) of tool execution timeouts
+</ParamField>
+
+<ParamField path="finishReason" type="LanguageModelV3UnifiedFinishReason">
+  Override finish reason in responses
+</ParamField>
+
+<ParamField path="tokenUsage" type="object">
+  Override token usage counts with `inputTokens` and `outputTokens`
+</ParamField>
+
+### CruelProviderOptions
+
+Options for `cruelProvider()` function.
+
+```typescript
+interface CruelProviderOptions extends CruelChaosOptions {
+  models?: Record<string, CruelChaosOptions>
+}
+```
+
+<ParamField path="models" type="Record<string, CruelChaosOptions>">
+  Model-specific chaos configuration, keyed by model ID
+</ParamField>
+
+### CruelMiddlewareOptions
+
+Options for `cruelMiddleware()` function.
+
+```typescript
+type CruelMiddlewareOptions = CruelChaosOptions
+```
+
+## Resilience Patterns
+
+### CircuitBreakerOptions
+
+Configuration for circuit breaker pattern.
+
+```typescript
+interface CircuitBreakerOptions {
+  threshold: number
+  timeout: number
+  onOpen?: () => void
+  onClose?: () => void
+  onHalfOpen?: () => void
+}
+```
+
+<ParamField path="threshold" type="number" required>
+  Number of failures before opening circuit
+</ParamField>
+
+<ParamField path="timeout" type="number" required>
+  Time in ms before attempting to close circuit
+</ParamField>
+
+<ParamField path="onOpen" type="() => void">
+  Callback when circuit opens
+</ParamField>
+
+<ParamField path="onClose" type="() => void">
+  Callback when circuit closes
+</ParamField>
+
+<ParamField path="onHalfOpen" type="() => void">
+  Callback when circuit enters half-open state
+</ParamField>
+
+### RetryOptions
+
+Configuration for retry pattern.
+
+```typescript
+interface RetryOptions {
+  attempts: number
+  delay?: number | [number, number]
+  backoff?: 'fixed' | 'linear' | 'exponential'
+  maxDelay?: number
+  onRetry?: (attempt: number, error: Error) => void
+  retryIf?: (error: Error) => boolean
+}
+```
+
+<ParamField path="attempts" type="number" required>
+  Maximum number of retry attempts
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]">
+  Delay between retries in ms or range
+</ParamField>
+
+<ParamField path="backoff" type="'fixed' | 'linear' | 'exponential'">
+  Backoff strategy for retry delays
+</ParamField>
+
+<ParamField path="maxDelay" type="number">
+  Maximum delay in ms (caps backoff)
+</ParamField>
+
+<ParamField path="onRetry" type="(attempt: number, error: Error) => void">
+  Callback invoked before each retry
+</ParamField>
+
+<ParamField path="retryIf" type="(error: Error) => boolean">
+  Predicate to determine if error should trigger retry
+</ParamField>
+
+### BulkheadOptions
+
+Configuration for bulkhead pattern (concurrency limiting).
+
+```typescript
+interface BulkheadOptions {
+  maxConcurrent: number
+  maxQueue?: number
+  onReject?: () => void
+}
+```
+
+<ParamField path="maxConcurrent" type="number" required>
+  Maximum number of concurrent executions
+</ParamField>
+
+<ParamField path="maxQueue" type="number">
+  Maximum queue size for waiting requests
+</ParamField>
+
+<ParamField path="onReject" type="() => void">
+  Callback when request is rejected due to full queue
+</ParamField>
+
+### TimeoutOptions
+
+Configuration for timeout pattern.
+
+```typescript
+interface TimeoutOptions {
+  ms: number
+  onTimeout?: () => void
+}
+```
+
+<ParamField path="ms" type="number" required>
+  Timeout duration in milliseconds
+</ParamField>
+
+<ParamField path="onTimeout" type="() => void">
+  Callback invoked when timeout occurs
+</ParamField>
+
+### FallbackOptions
+
+Configuration for fallback pattern.
+
+```typescript
+interface FallbackOptions<T> {
+  fallback: T | (() => T | Promise<T>)
+  onFallback?: (error: Error) => void
+}
+```
+
+<ParamField path="fallback" type="T | (() => T | Promise<T>)" required>
+  Fallback value or function to provide value on error
+</ParamField>
+
+<ParamField path="onFallback" type="(error: Error) => void">
+  Callback invoked when fallback is used
+</ParamField>
+
+### HedgeOptions
+
+Configuration for hedge (parallel request) pattern.
+
+```typescript
+interface HedgeOptions {
+  count: number
+  delay: number
+}
+```
+
+<ParamField path="count" type="number" required>
+  Number of parallel requests to make
+</ParamField>
+
+<ParamField path="delay" type="number" required>
+  Delay in ms between launching each request
+</ParamField>
+
+### RateLimiterOptions
+
+Configuration for rate limiter.
+
+```typescript
+interface RateLimiterOptions {
+  requests: number
+  interval: number
+  onLimit?: () => void
+}
+```
+
+<ParamField path="requests" type="number" required>
+  Number of requests allowed per interval
+</ParamField>
+
+<ParamField path="interval" type="number" required>
+  Time interval in milliseconds
+</ParamField>
+
+<ParamField path="onLimit" type="() => void">
+  Callback when rate limit is exceeded
+</ParamField>
+
+### CacheOptions
+
+Configuration for caching wrapper.
+
+```typescript
+interface CacheOptions<T> {
+  ttl: number
+  key?: (...args: unknown[]) => string
+  onHit?: (key: string) => void
+  onMiss?: (key: string) => void
+}
+```
+
+<ParamField path="ttl" type="number" required>
+  Time-to-live for cache entries in milliseconds
+</ParamField>
+
+<ParamField path="key" type="(...args: unknown[]) => string">
+  Custom key generation function (defaults to JSON.stringify of args)
+</ParamField>
+
+<ParamField path="onHit" type="(key: string) => void">
+  Callback on cache hit
+</ParamField>
+
+<ParamField path="onMiss" type="(key: string) => void">
+  Callback on cache miss
+</ParamField>
+
+## Configuration & State
+
+### CruelConfig
+
+Global configuration for Cruel.
+
+```typescript
+interface CruelConfig {
+  enabled: boolean
+  seed?: number
+  log?: boolean
+  safe?: boolean
+}
+```
+
+<ParamField path="enabled" type="boolean" required>
+  Whether Cruel is globally enabled
+</ParamField>
+
+<ParamField path="seed" type="number">
+  Random seed for deterministic behavior
+</ParamField>
+
+<ParamField path="log" type="boolean">
+  Enable logging of chaos events
+</ParamField>
+
+<ParamField path="safe" type="boolean">
+  Safe mode (reduces chaos intensity)
+</ParamField>
+
+### Stats
+
+Statistics tracking interface.
+
+```typescript
+interface Stats {
+  calls: number
+  failures: number
+  timeouts: number
+  delays: number
+  corrupted: number
+  rateLimited: number
+  streamsCut: number
+  latencies: number[]
+  byTarget: Map<string, { calls: number; failures: number; latencies: number[] }>
+}
+```
+
+### ScenarioConfig
+
+Configuration for chaos scenarios.
+
+```typescript
+interface ScenarioConfig {
+  name: string
+  duration?: number
+  chaos?: ChaosOptions
+}
+```
+
+<ParamField path="name" type="string" required>
+  Scenario name
+</ParamField>
+
+<ParamField path="duration" type="number">
+  Scenario duration in milliseconds
+</ParamField>
+
+<ParamField path="chaos" type="ChaosOptions">
+  Chaos configuration for scenario
+</ParamField>
+
+## Events
+
+### ChaosEvent
+
+Union type of all possible chaos events.
+
+```typescript
+type ChaosEvent =
+  | { type: 'rateLimit'; modelId: string }
+  | { type: 'overloaded'; modelId: string }
+  | { type: 'contextLength'; modelId: string }
+  | { type: 'contentFilter'; modelId: string }
+  | { type: 'modelUnavailable'; modelId: string }
+  | { type: 'invalidApiKey'; modelId: string }
+  | { type: 'quotaExceeded'; modelId: string }
+  | { type: 'emptyResponse'; modelId: string }
+  | { type: 'fail'; modelId: string }
+  | { type: 'timeout'; modelId: string }
+  | { type: 'delay'; modelId: string; ms: number }
+  | { type: 'streamCut'; modelId: string }
+  | { type: 'slowTokens'; modelId: string; ms: number }
+  | { type: 'corruptChunk'; modelId: string }
+  | { type: 'partialResponse'; modelId: string }
+  | { type: 'toolFailure' }
+  | { type: 'toolTimeout' }
+```

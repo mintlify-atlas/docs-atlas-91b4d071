@@ -1,0 +1,320 @@
+---
+title: 'Basic Chaos Methods'
+description: 'Core chaos engineering methods for testing function reliability'
+---
+
+# Basic Chaos Methods
+
+Basic chaos methods provide simple, composable ways to inject failures, delays, and other issues into your functions.
+
+## fail
+
+Injects random failures into a function.
+
+```typescript
+cruel.fail(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with chaos
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of failure (0 to 1). Default is 0.1 (10% failure rate)
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Basic Usage
+import { cruel } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  const response = await fetch(`/api/users/${id}`)
+  return response.json()
+}
+
+// Wrap function with 20% failure rate
+const flakyFetchUser = cruel.fail(fetchUser, 0.2)
+
+try {
+  const user = await flakyFetchUser('123')
+} catch (error) {
+  // CruelError thrown 20% of the time
+  console.error(error.message) // "cruel: injected failure"
+}
+```
+
+```typescript Custom Rate
+// 50% failure rate for extreme testing
+const veryFlakyFn = cruel.fail(myFunction, 0.5)
+
+// 5% failure rate for realistic scenarios
+const slightlyFlakyFn = cruel.fail(myFunction, 0.05)
+```
+</CodeGroup>
+
+---
+
+## slow
+
+Adds artificial latency to function execution.
+
+```typescript
+cruel.slow(fn, delay)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with chaos
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]" default="500">
+  Delay in milliseconds. Can be a fixed number or a range `[min, max]`
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Fixed Delay
+import { cruel } from 'cruel'
+
+const query = async (sql: string) => {
+  return database.execute(sql)
+}
+
+// Add 1 second delay
+const slowQuery = cruel.slow(query, 1000)
+
+await slowQuery('SELECT * FROM users')
+// Takes at least 1000ms
+```
+
+```typescript Random Delay Range
+// Random delay between 500ms and 2000ms
+const unpredictableFn = cruel.slow(myFunction, [500, 2000])
+
+await unpredictableFn()
+// Each call takes a different amount of time
+```
+</CodeGroup>
+
+---
+
+## timeout
+
+Causes functions to timeout and never resolve.
+
+```typescript
+cruel.timeout(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with chaos
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of timeout (0 to 1). Default is 0.1 (10% timeout rate)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const upload = async (file: File) => {
+  return cloudStorage.upload(file)
+}
+
+// 15% chance of timing out
+const timeoutUpload = cruel.timeout(upload, 0.15)
+
+// This will hang 15% of the time
+await timeoutUpload(myFile)
+```
+
+<Note>
+  Timeout chaos returns a Promise that never resolves. Make sure to implement proper timeout handling in your application code.
+</Note>
+
+---
+
+## flaky
+
+Combines failures, timeouts, and delays for realistic flaky behavior.
+
+```typescript
+cruel.flaky(fn, intensity)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with chaos
+</ParamField>
+
+<ParamField path="intensity" type="number" default="0.2">
+  Intensity of flakiness (0 to 1). Higher values create more chaos
+</ParamField>
+
+### Behavior
+
+The `flaky` method applies:
+- Failure rate: `intensity × 0.5`
+- Timeout rate: `intensity × 0.25`  
+- Random delay: `[100ms, 1000ms]`
+
+### Example
+
+<CodeGroup>
+```typescript Default Intensity
+import { cruel } from 'cruel'
+
+const sendEmail = async (to: string, subject: string) => {
+  return emailService.send({ to, subject })
+}
+
+// Moderate flakiness (intensity 0.2)
+const flakySendEmail = cruel.flaky(sendEmail)
+// - 10% failure rate
+// - 5% timeout rate
+// - 100-1000ms delay
+
+await flakySendEmail('user@example.com', 'Hello')
+```
+
+```typescript High Intensity
+// Severe flakiness (intensity 0.6)
+const veryFlakyFn = cruel.flaky(myFunction, 0.6)
+// - 30% failure rate
+// - 15% timeout rate
+// - 100-1000ms delay
+```
+</CodeGroup>
+
+---
+
+## unreliable
+
+Simulates an unreliable service with failures, timeouts, delays, and jitter.
+
+```typescript
+cruel.unreliable(fn)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with chaos
+</ParamField>
+
+### Behavior
+
+Applies:
+- 30% failure rate
+- 10% timeout rate
+- 200-2000ms delay
+- Up to 500ms jitter
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const thirdPartyAPI = async (endpoint: string) => {
+  return fetch(`https://external-api.com${endpoint}`)
+}
+
+// Simulate unreliable third-party service
+const unreliableAPI = cruel.unreliable(thirdPartyAPI)
+
+try {
+  const data = await unreliableAPI('/data')
+  console.log('Success:', data)
+} catch (error) {
+  console.error('Failed:', error)
+}
+```
+
+---
+
+## nightmare
+
+Maximum chaos with high failure rates and extreme delays.
+
+```typescript
+cruel.nightmare(fn)
+```
+
+<ParamField path="fn" type="function" required>
+  The function to wrap with chaos
+</ParamField>
+
+### Behavior
+
+Applies:
+- 50% failure rate
+- 20% timeout rate  
+- 500-5000ms delay
+- Up to 1000ms jitter
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const processPayment = async (amount: number) => {
+  return paymentGateway.charge(amount)
+}
+
+// Test worst-case scenarios
+const nightmarePayment = cruel.nightmare(processPayment)
+
+try {
+  await nightmarePayment(99.99)
+} catch (error) {
+  // Fails 50% of the time, with long delays
+  console.error('Payment failed:', error)
+}
+```
+
+<Warning>
+  Use `nightmare` mode for stress testing only. It creates extreme conditions that are unlikely in production.
+</Warning>
+
+---
+
+## Composing Methods
+
+You can compose multiple chaos methods together:
+
+```typescript
+import { cruel } from 'cruel'
+
+const myFunction = async () => { /* ... */ }
+
+// Combine slow + fail
+const chaoticFn = cruel.fail(
+  cruel.slow(myFunction, [100, 500]),
+  0.2
+)
+
+// Or use the wrap API for cleaner composition
+const composedFn = cruel(myFunction, {
+  fail: 0.2,
+  delay: [100, 500],
+  timeout: 0.1
+})
+```
+
+## Source Reference
+
+All basic methods are defined in `index.ts:315-324`:
+
+```typescript
+cruel.fail = <T extends AnyFn>(fn: T, rate = 0.1): T => cruel(fn, { fail: rate })
+cruel.slow = <T extends AnyFn>(fn: T, delay: number | [number, number] = 500): T =>
+  cruel(fn, { delay })
+cruel.timeout = <T extends AnyFn>(fn: T, rate = 0.1): T => cruel(fn, { timeout: rate })
+cruel.flaky = <T extends AnyFn>(fn: T, intensity = 0.2): T =>
+  cruel(fn, { fail: intensity * 0.5, timeout: intensity * 0.25, delay: [100, 1000] })
+cruel.unreliable = <T extends AnyFn>(fn: T): T =>
+  cruel(fn, { fail: 0.3, timeout: 0.1, delay: [200, 2000], jitter: 500 })
+cruel.nightmare = <T extends AnyFn>(fn: T): T =>
+  cruel(fn, { fail: 0.5, timeout: 0.2, delay: [500, 5000], jitter: 1000 })
+```

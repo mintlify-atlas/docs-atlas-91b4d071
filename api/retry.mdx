@@ -1,0 +1,90 @@
+---
+title: Retry
+description: Automatically retry failed function calls with configurable backoff strategies
+---
+
+## Function Signature
+
+```typescript
+function withRetry<T extends AnyFn>(
+  fn: T,
+  options: RetryOptions
+): T
+```
+
+Wraps a function with retry logic. Automatically retries failed calls with configurable backoff strategies.
+
+## Options
+
+<ParamField path="attempts" type="number" required>
+  Number of retry attempts. Must be at least 1.
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]">
+  Delay between retries in milliseconds. Can be a single number or a range `[min, max]`. Defaults to 1000ms.
+</ParamField>
+
+<ParamField path="backoff" type="'fixed' | 'linear' | 'exponential'">
+  Backoff strategy for retries:
+  - `fixed`: Use the same delay for all retries
+  - `linear`: Multiply delay by attempt number
+  - `exponential`: Multiply delay by 2^(attempt-1)
+</ParamField>
+
+<ParamField path="maxDelay" type="number">
+  Maximum delay in milliseconds. Caps the backoff delay.
+</ParamField>
+
+<ParamField path="onRetry" type="(attempt: number, error: Error) => void">
+  Callback invoked before each retry attempt.
+</ParamField>
+
+<ParamField path="retryIf" type="(error: Error) => boolean">
+  Predicate function to determine if an error should be retried. If it returns false, the error is thrown immediately.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function with retry logic.
+
+## Types
+
+```typescript
+interface RetryOptions {
+  attempts: number
+  delay?: number | [number, number]
+  backoff?: "fixed" | "linear" | "exponential"
+  maxDelay?: number
+  onRetry?: (attempt: number, error: Error) => void
+  retryIf?: (error: Error) => boolean
+}
+```
+
+## Example
+
+```typescript
+import { withRetry } from 'cruel'
+
+const resilientFetch = withRetry(
+  async (url: string) => {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Request failed')
+    return response.json()
+  },
+  {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+    maxDelay: 10000,
+    onRetry: (attempt, error) => {
+      console.log(`Retry attempt ${attempt}: ${error.message}`)
+    },
+    retryIf: (error) => {
+      // Only retry on network errors, not client errors
+      return !error.message.includes('400')
+    }
+  }
+)
+
+const data = await resilientFetch('https://api.example.com/data')
+```

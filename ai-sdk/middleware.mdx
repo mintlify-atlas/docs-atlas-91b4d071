@@ -1,0 +1,411 @@
+---
+title: cruelMiddleware
+description: Use AI SDK v6 middleware for chaos injection
+---
+
+`cruelMiddleware()` creates an AI SDK v6 middleware that injects chaos into model operations. It integrates with the AI SDK's `experimental_middleware` system.
+
+## API Reference
+
+```typescript
+function cruelMiddleware(
+  options?: CruelMiddlewareOptions
+): LanguageModelV3Middleware
+```
+
+<ParamField path="options" type="CruelMiddlewareOptions">
+  Chaos configuration. Same options as [cruelModel](/ai-sdk/models#chaos-options).
+</ParamField>
+
+<ResponseField name="return" type="LanguageModelV3Middleware">
+  Returns an AI SDK v6 middleware with `specificationVersion: "v3"`.
+</ResponseField>
+
+## Basic Usage
+
+<CodeGroup>
+```typescript Model-Level Middleware
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+const model = openai('gpt-4', {
+  experimental_middleware: cruelMiddleware({
+    rateLimit: 0.15,
+    delay: [100, 300],
+  }),
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Explain middleware',
+})
+```
+
+```typescript Multiple Middleware
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+import { myLoggingMiddleware } from './logging'
+
+const model = openai('gpt-4', {
+  experimental_middleware: [
+    myLoggingMiddleware,
+    cruelMiddleware({ rateLimit: 0.1 }),
+  ],
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Hello',
+})
+```
+
+```typescript Global Middleware
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+const chaos = cruelMiddleware({
+  rateLimit: 0.1,
+  overloaded: 0.05,
+  streamCut: 0.05,
+})
+
+// Reuse across multiple models
+const gpt4 = openai('gpt-4', { experimental_middleware: chaos })
+const gpt35 = openai('gpt-3.5-turbo', { experimental_middleware: chaos })
+```
+</CodeGroup>
+
+## How It Works
+
+The middleware wraps both `doGenerate` and `doStream` operations:
+
+```typescript
+// Simplified implementation
+const middleware: LanguageModelV3Middleware = {
+  specificationVersion: 'v3',
+  
+  async wrapGenerate({ doGenerate, model }) {
+    // Apply chaos before generation
+    await applyChaos(options, model.modelId)
+    
+    // Call underlying model
+    const result = await doGenerate()
+    
+    // Modify result if needed
+    return applyPostChaos(result, options, model.modelId)
+  },
+  
+  async wrapStream({ doStream, model }) {
+    // Apply chaos before streaming
+    await applyChaos(options, model.modelId)
+    
+    // Call underlying model
+    const result = await doStream()
+    
+    // Transform stream with chaos
+    return {
+      ...result,
+      stream: applyStreamChaos(result.stream, options, model.modelId),
+    }
+  },
+}
+```
+
+See [ai-sdk.ts:465-482](https://github.com/vercel/ai/tree/main/packages/cruel/src/ai-sdk.ts#L465-L482) for implementation.
+
+## Chaos Options
+
+`CruelMiddlewareOptions` is an alias for `CruelChaosOptions`. All options from [cruelModel](/ai-sdk/models#chaos-options) are supported:
+
+- [API Errors](/ai-sdk/models#api-errors) - `rateLimit`, `overloaded`, `invalidApiKey`, etc.
+- [Content Issues](/ai-sdk/models#content-issues) - `contextLength`, `contentFilter`, `emptyResponse`
+- [Latency](/ai-sdk/models#latency) - `delay`, `timeout`
+- [Streaming Chaos](/ai-sdk/models#streaming-chaos) - `streamCut`, `slowTokens`, `corruptChunks`
+- [Response Modification](/ai-sdk/models#response-modification) - `finishReason`, `tokenUsage`
+- [Generic Failures](/ai-sdk/models#generic-failures) - `fail`
+- [Event Monitoring](/ai-sdk/models#event-monitoring) - `onChaos`
+
+## Composing Middleware
+
+Middleware executes in array order. Cruel middleware can be placed before or after your custom middleware:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+const loggingMiddleware: LanguageModelV3Middleware = {
+  specificationVersion: 'v3',
+  async wrapGenerate({ doGenerate, model }) {
+    console.log('Generating with', model.modelId)
+    const result = await doGenerate()
+    console.log('Generated', result.content.length, 'items')
+    return result
+  },
+}
+
+// Chaos happens BEFORE logging
+const beforeLogging = openai('gpt-4', {
+  experimental_middleware: [
+    cruelMiddleware({ rateLimit: 0.1 }),
+    loggingMiddleware,
+  ],
+})
+
+// Chaos happens AFTER logging
+const afterLogging = openai('gpt-4', {
+  experimental_middleware: [
+    loggingMiddleware,
+    cruelMiddleware({ rateLimit: 0.1 }),
+  ],
+})
+```
+
+<Note>
+  When chaos occurs before logging, you'll see the error in logs. When after, the error happens before the log middleware runs.
+</Note>
+
+## Monitoring with Middleware
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+let chaosCount = 0
+let errorCount = 0
+
+const model = openai('gpt-4', {
+  experimental_middleware: cruelMiddleware({
+    rateLimit: 0.2,
+    overloaded: 0.1,
+    streamCut: 0.05,
+    
+    onChaos: (event) => {
+      chaosCount++
+      console.log(`[${event.modelId}] ${event.type}`)
+      
+      if (
+        event.type === 'rateLimit' ||
+        event.type === 'overloaded' ||
+        event.type === 'streamCut'
+      ) {
+        errorCount++
+      }
+    },
+  }),
+})
+
+// Run test suite
+for (let i = 0; i < 100; i++) {
+  try {
+    await generateText({ model, prompt: `Test ${i}` })
+  } catch (error) {
+    // Expected chaos errors
+  }
+}
+
+console.log(`Total chaos events: ${chaosCount}`)
+console.log(`Total errors: ${errorCount}`)
+```
+
+## Streaming Example
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { streamText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+const model = openai('gpt-4', {
+  experimental_middleware: cruelMiddleware({
+    slowTokens: [20, 80],
+    streamCut: 0.1,
+    corruptChunks: 0.02,
+    
+    onChaos: (event) => {
+      if (event.type === 'streamCut') {
+        console.error('Stream interrupted!')
+      }
+      if (event.type === 'corruptChunk') {
+        console.warn('Corrupt chunk detected')
+      }
+    },
+  }),
+})
+
+const result = streamText({
+  model,
+  prompt: 'Write a story',
+})
+
+try {
+  for await (const chunk of result.textStream) {
+    process.stdout.write(chunk)
+  }
+  console.log('\nStream completed')
+} catch (error) {
+  console.error('\nStream error:', error.message)
+}
+```
+
+## With Presets
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { cruelMiddleware, presets } from 'cruel/ai-sdk'
+
+const model = openai('gpt-4', {
+  experimental_middleware: cruelMiddleware({
+    ...presets.unstable,
+    
+    // Override specific values
+    rateLimit: 0.3,
+    
+    // Add monitoring
+    onChaos: (event) => {
+      console.log('Chaos:', event.type)
+    },
+  }),
+})
+```
+
+## Middleware vs cruelModel vs cruelProvider
+
+<CardGroup cols={3}>
+  <Card title="cruelMiddleware" icon="filter">
+    **Use When:**
+    - Integrating with existing middleware
+    - Need composable chaos
+    - Using AI SDK middleware features
+    
+    **Pros:**
+    - Composable with other middleware
+    - Native AI SDK integration
+    - Reusable across models
+    
+    **Cons:**
+    - Requires middleware support
+    - More verbose setup
+  </Card>
+  
+  <Card title="cruelModel" icon="box">
+    **Use When:**
+    - Wrapping individual models
+    - Testing specific models
+    - Fine-grained control
+    
+    **Pros:**
+    - Simple API
+    - Direct model wrapping
+    - Per-model configuration
+    
+    **Cons:**
+    - Must wrap each model
+    - No middleware composition
+  </Card>
+  
+  <Card title="cruelProvider" icon="layer-group">
+    **Use When:**
+    - Multiple models from same provider
+    - Provider-wide chaos
+    - Centralized configuration
+    
+    **Pros:**
+    - Single configuration point
+    - Automatic model wrapping
+    - Per-model overrides
+    
+    **Cons:**
+    - Provider-specific
+    - Less composable
+  </Card>
+</CardGroup>
+
+## Real-World Example
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+import { metricsMiddleware } from './metrics'
+import { cachingMiddleware } from './caching'
+
+// Combine chaos with production middleware
+const model = openai('gpt-4', {
+  experimental_middleware: [
+    // Log metrics first (sees everything)
+    metricsMiddleware,
+    
+    // Check cache before chaos
+    cachingMiddleware,
+    
+    // Apply chaos to non-cached requests
+    cruelMiddleware({
+      rateLimit: 0.1,
+      delay: [50, 200],
+      onChaos: (event) => {
+        // Send chaos events to monitoring
+        sendToDatadog('ai.chaos', 1, {
+          type: event.type,
+          model: event.modelId,
+        })
+      },
+    }),
+  ],
+})
+
+export async function query(prompt: string) {
+  return generateText({
+    model,
+    prompt,
+    maxRetries: 3,
+  })
+}
+```
+
+## TypeScript
+
+```typescript
+import type {
+  LanguageModelV3Middleware,
+  CruelMiddlewareOptions,
+} from 'cruel/ai-sdk'
+
+const options: CruelMiddlewareOptions = {
+  rateLimit: 0.1,
+  delay: [100, 300],
+}
+
+const middleware: LanguageModelV3Middleware = cruelMiddleware(options)
+
+// middleware.specificationVersion === 'v3'
+// middleware.wrapGenerate: function
+// middleware.wrapStream: function
+```
+
+## Limitations
+
+<Warning>
+  `cruelMiddleware` only works with **language models** that support AI SDK v6 middleware.
+  
+  For other model types (embeddings, images, speech, etc.), use `cruelEmbeddingModel`, `cruelImageModel`, etc.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Wrapping" icon="box" href="/ai-sdk/models">
+    Learn about cruelModel
+  </Card>
+  <Card title="Provider Wrapping" icon="layer-group" href="/ai-sdk/providers">
+    Use cruelProvider
+  </Card>
+  <Card title="Tool Chaos" icon="wrench" href="/ai-sdk/tools">
+    Inject tool failures
+  </Card>
+  <Card title="Presets" icon="sliders" href="/ai-sdk/presets">
+    Use built-in presets
+  </Card>
+</CardGroup>

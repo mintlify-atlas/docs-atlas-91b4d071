@@ -1,0 +1,76 @@
+---
+title: Fallback
+description: Provide fallback values when functions fail
+---
+
+## Function Signature
+
+```typescript
+function withFallback<T extends AnyFn>(
+  fn: T,
+  options: FallbackOptions<Settled<ReturnType<T>>>
+): T
+```
+
+Wraps a function with fallback logic. Returns a fallback value when the function throws an error.
+
+## Options
+
+<ParamField path="fallback" type="T | (() => MaybePromise<T>)" required>
+  Fallback value or function that returns the fallback value. Can be synchronous or asynchronous.
+</ParamField>
+
+<ParamField path="onFallback" type="(error: Error) => void">
+  Callback invoked when the fallback is used.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function that never throws (returns fallback on error).
+
+## Types
+
+```typescript
+interface FallbackOptions<T> {
+  fallback: T | (() => MaybePromise<T>)
+  onFallback?: (error: Error) => void
+}
+
+type MaybePromise<T> = T | Promise<T>
+type Settled<T> = T extends PromiseLike<infer U> ? U : T
+```
+
+## Example
+
+```typescript
+import { withFallback } from 'cruel'
+
+// Static fallback value
+const fetchWithFallback = withFallback(
+  async (url: string) => {
+    const response = await fetch(url)
+    return response.json()
+  },
+  {
+    fallback: { data: [], cached: true },
+    onFallback: (error) => {
+      console.warn('Using fallback data:', error.message)
+    }
+  }
+)
+
+// Dynamic fallback function
+const fetchWithCache = withFallback(
+  async (id: string) => fetchFromAPI(id),
+  {
+    fallback: async () => {
+      return await getCachedData()
+    },
+    onFallback: () => {
+      console.log('API failed, using cache')
+    }
+  }
+)
+
+const data = await fetchWithFallback('https://api.example.com/data')
+```

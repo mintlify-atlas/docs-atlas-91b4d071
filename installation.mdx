@@ -1,0 +1,117 @@
+---
+title: Installation
+description: Install Cruel with your package manager
+---
+
+Cruel is a zero-dependency library that works in any JavaScript environment. Install it with your preferred package manager and start testing.
+
+## Install the package
+
+Choose your package manager and install Cruel:
+
+<CodeGroup>
+  ```bash npm
+  npm install cruel
+  ```
+
+  ```bash yarn
+  yarn add cruel
+  ```
+
+  ```bash pnpm
+  pnpm add cruel
+  ```
+
+  ```bash bun
+  bun add cruel
+  ```
+</CodeGroup>
+
+## TypeScript setup
+
+Cruel is written in TypeScript and includes type definitions out of the box. No additional setup is required.
+
+**Zero dependencies**  
+Cruel has no runtime dependencies or peer dependencies. There's nothing else to install.
+
+**Type safety**  
+All functions are fully typed with TypeScript generics that preserve your function signatures:
+
+```typescript
+import { cruel } from "cruel"
+
+// Original function signature is preserved
+const fetchUser = async (id: string): Promise<User> => {
+  const res = await fetch(`/api/users/${id}`)
+  return res.json()
+}
+
+// Wrapped function has identical signature
+const chaoticFetchUser = cruel(fetchUser, { fail: 0.1 })
+
+// TypeScript knows the return type is Promise<User>
+const user = await chaoticFetchUser("123")
+```
+
+## Verify installation
+
+Create a simple test file to verify everything works:
+
+```typescript test.ts
+import { cruel } from "cruel"
+
+const testFn = async (msg: string) => {
+  return { success: true, message: msg }
+}
+
+const chaoticFn = cruel(testFn, {
+  fail: 0,
+  delay: [50, 100],
+})
+
+const result = await chaoticFn("Hello, Cruel!")
+console.log(result) // { success: true, message: "Hello, Cruel!" }
+
+const stats = cruel.stats()
+console.log(stats) // { calls: 1, failures: 0, delays: 1, ... }
+```
+
+Run the test:
+
+<CodeGroup>
+  ```bash node
+  node test.ts
+  ```
+
+  ```bash bun
+  bun test.ts
+  ```
+
+  ```bash deno
+  deno run test.ts
+  ```
+</CodeGroup>
+
+If you see the output with no errors, Cruel is installed correctly.
+
+## Import paths
+
+Cruel provides two import paths:
+
+**Main package**  
+All core chaos functions and resilience patterns:
+
+```typescript
+import { cruel, createCruel, CruelError } from "cruel"
+```
+
+**AI SDK integration**  
+Specialized functions for AI SDK v6:
+
+```typescript
+import { cruelModel, cruelProvider, cruelMiddleware, presets } from "cruel/ai-sdk"
+```
+
+## Next steps
+
+Your installation is complete. Continue to the [quickstart guide](/quickstart) to inject your first chaos.

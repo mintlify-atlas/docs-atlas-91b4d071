@@ -1,0 +1,220 @@
+---
+title: Events
+description: Listen to chaos injection events
+---
+
+Cruel provides an event system to monitor chaos injection in real-time, allowing you to track failures, retries, and circuit breaker state changes.
+
+## Event types
+
+Cruel emits these event types:
+
+```typescript
+type CruelEventType =
+  | "call"           // Function was called
+  | "success"        // Function succeeded
+  | "failure"        // Function failed
+  | "timeout"        // Function timed out
+  | "retry"          // Retry attempt
+  | "circuitOpen"    // Circuit breaker opened
+  | "circuitClose"   // Circuit breaker closed
+```
+
+## Listen to events
+
+```typescript
+import { cruel } from "cruel"
+
+// Add event listener
+const unsubscribe = cruel.on((event) => {
+  console.log(`Event: ${event.type}`, event)
+})
+
+// Remove listener when done
+unsubscribe()
+```
+
+## Event data
+
+```typescript
+cruel.on((event) => {
+  // Common fields
+  console.log(event.type)     // Event type
+  console.log(event.target)   // Function name
+  console.log(event.duration) // Duration in ms
+  console.log(event.error)    // Error object (if failed)
+})
+```
+
+## Monitor failures
+
+```typescript
+import { cruel } from "cruel"
+
+let failureCount = 0
+
+cruel.on((event) => {
+  if (event.type === "failure") {
+    failureCount++
+    console.log(`Failure #${failureCount}: ${event.target}`)
+    console.log(`Error: ${event.error?.message}`)
+    console.log(`Duration: ${event.duration}ms`)
+  }
+})
+```
+
+## Monitor circuit breaker
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.on((event) => {
+  if (event.type === "circuitOpen") {
+    console.log("🔴 Circuit opened - requests blocked")
+    // Alert operations team
+  }
+  
+  if (event.type === "circuitClose") {
+    console.log("🟢 Circuit closed - normal operation")
+  }
+})
+
+const api = cruel.circuitBreaker(fetch, {
+  threshold: 5,
+  timeout: 30000,
+})
+```
+
+## Monitor retries
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.on((event) => {
+  if (event.type === "retry") {
+    console.log("Retrying after error:", event.error)
+  }
+})
+
+const api = cruel.retry(fetch, {
+  attempts: 3,
+  delay: 1000,
+})
+```
+
+## Track latency
+
+```typescript
+import { cruel } from "cruel"
+
+const latencies: number[] = []
+
+cruel.on((event) => {
+  if (event.type === "success" && event.duration) {
+    latencies.push(event.duration)
+    
+    // Calculate average
+    const avg = latencies.reduce((a, b) => a + b, 0) / latencies.length
+    console.log(`Average latency: ${avg.toFixed(2)}ms`)
+  }
+})
+```
+
+## Multiple listeners
+
+```typescript
+import { cruel } from "cruel"
+
+// Logger
+cruel.on((event) => {
+  console.log(`[${event.type}] ${event.target}`, event.duration)
+})
+
+// Metrics
+cruel.on((event) => {
+  metrics.increment(`chaos.${event.type}`)
+  if (event.duration) {
+    metrics.histogram("chaos.duration", event.duration)
+  }
+})
+
+// Alerting
+cruel.on((event) => {
+  if (event.type === "failure") {
+    alerting.notify(`Chaos failure: ${event.target}`)
+  }
+})
+```
+
+## Remove all listeners
+
+```typescript
+import { cruel } from "cruel"
+
+// Remove all event listeners
+cruel.removeAllListeners()
+```
+
+## Testing with events
+
+```typescript
+import { test, beforeEach } from "bun:test"
+import { cruel } from "cruel"
+
+test("emits failure events", async () => {
+  const events: CruelEventType[] = []
+  
+  cruel.on((event) => {
+    events.push(event.type)
+  })
+  
+  const api = cruel(fetch, { fail: 1 })
+  
+  try {
+    await api("https://api.example.com")
+  } catch (e) {
+    // Expected
+  }
+  
+  expect(events).toContain("call")
+  expect(events).toContain("failure")
+})
+
+beforeEach(() => {
+  cruel.removeAllListeners()
+})
+```
+
+## Real-world monitoring
+
+```typescript
+import { cruel } from "cruel"
+
+// Production monitoring
+cruel.on((event) => {
+  // Send to monitoring service
+  monitoring.track({
+    event: event.type,
+    target: event.target,
+    duration: event.duration,
+    failed: event.type === "failure",
+    timestamp: Date.now(),
+  })
+  
+  // Alert on high failure rate
+  const stats = cruel.stats()
+  const failureRate = stats.failures / stats.calls
+  
+  if (failureRate > 0.5) {
+    alerting.critical(`High chaos failure rate: ${(failureRate * 100).toFixed(1)}%`)
+  }
+})
+```
+
+<Note>
+Events are emitted synchronously. Heavy processing in event handlers may impact performance.
+</Note>
+
+<Tip>
+Use `cruel.removeAllListeners()` in test cleanup to avoid memory leaks.
+</Tip>

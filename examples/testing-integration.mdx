@@ -1,0 +1,538 @@
+---
+title: Testing Integration
+description: Integrate Cruel with your test framework
+---
+
+# Testing Integration
+
+Integrate chaos engineering into your test suite with Bun, Vitest, or Jest.
+
+## Bun Test Integration
+
+Basic setup with Bun:
+
+```typescript
+import { cruel } from 'cruel'
+import { describe, test, beforeEach, expect } from 'bun:test'
+
+beforeEach(() => {
+  cruel.reset()
+})
+
+describe('API Client', () => {
+  async function fetchUser(id: string) {
+    const response = await fetch(`https://api.example.com/users/${id}`)
+    return response.json()
+  }
+
+  test('handles network latency', async () => {
+    const slow = cruel.network.latency(fetchUser, 1000)
+
+    const start = Date.now()
+    await slow('123')
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeGreaterThanOrEqual(1000)
+  })
+
+  test('retries on failure', async () => {
+    let attempts = 0
+    const failing = async (id: string) => {
+      attempts++
+      if (attempts < 3) throw new Error('fail')
+      return { id, name: 'John' }
+    }
+
+    const resilient = cruel.retry(failing, {
+      attempts: 3,
+      delay: 10
+    })
+
+    const user = await resilient('123')
+    expect(user.name).toBe('John')
+    expect(attempts).toBe(3)
+  })
+})
+```
+
+## Vitest Integration
+
+Setup with Vitest:
+
+```typescript
+import { cruel } from 'cruel'
+import { describe, test, beforeEach, afterEach, expect, vi } from 'vitest'
+
+beforeEach(() => {
+  cruel.reset()
+  cruel.patchFetch()
+})
+
+afterEach(() => {
+  cruel.unpatchFetch()
+})
+
+describe('HTTP Client', () => {
+  test('handles rate limits with retry', async () => {
+    cruel.intercept('api.example.com', {
+      rateLimit: { rate: 0.5, retryAfter: 1 }
+    })
+
+    let attempts = 0
+    const fetchWithRetry = async () => {
+      attempts++
+      const response = await fetch('https://api.example.com/data')
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json()
+    }
+
+    const resilient = cruel.retry(fetchWithRetry, {
+      attempts: 3,
+      delay: 100,
+      backoff: 'exponential'
+    })
+
+    try {
+      await resilient()
+    } catch {}
+
+    expect(attempts).toBeGreaterThan(1)
+  })
+
+  test('uses circuit breaker after threshold', async () => {
+    cruel.intercept('api.example.com', {
+      status: 500,
+      fail: 1
+    })
+
+    const apiFetch = async () => {
+      const response = await fetch('https://api.example.com/data')
+      if (!response.ok) throw new Error('API Error')
+      return response.json()
+    }
+
+    const breaker = cruel.circuitBreaker(apiFetch, {
+      threshold: 3,
+      timeout: 5000
+    })
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        await breaker()
+      } catch {}
+    }
+
+    expect(breaker.getState().state).toBe('open')
+  })
+})
+```
+
+## Jest Integration
+
+Setup with Jest:
+
+```typescript
+import { cruel } from 'cruel'
+import { describe, test, beforeEach, expect } from '@jest/globals'
+
+beforeEach(() => {
+  cruel.reset()
+})
+
+describe('Database Client', () => {
+  const db = {
+    query: async (sql: string) => {
+      return [{ id: 1, name: 'Test' }]
+    }
+  }
+
+  test('handles slow queries', async () => {
+    const slowQuery = cruel(db.query, { delay: 500 })
+
+    const start = Date.now()
+    await slowQuery('SELECT * FROM users')
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeGreaterThanOrEqual(500)
+  })
+
+  test('times out long-running queries', async () => {
+    const verySlowQuery = cruel(db.query, { delay: 5000 })
+    const withTimeout = cruel.withTimeout(verySlowQuery, { ms: 1000 })
+
+    await expect(withTimeout('SELECT * FROM users'))
+      .rejects
+      .toThrow('cruel: injected timeout')
+  })
+})
+```
+
+## Custom Matchers
+
+Use Cruel's custom matchers:
+
+```typescript
+import { cruel, setupMatchers } from 'cruel'
+import { test, beforeAll, expect } from 'bun:test'
+
+beforeAll(() => {
+  setupMatchers()
+})
+
+test('custom matchers', async () => {
+  const fn = async () => 'test'
+  const failing = cruel.fail(fn, 1)
+
+  // Check if function throws Cruel errors
+  await expect(failing()).rejects.toBeCruel()
+  
+  // Check for specific error types
+  const timeout = cruel.timeout(fn, 1)
+  await expect(timeout()).rejects.toBeCruelTimeout()
+
+  const networkError = cruel.network.disconnect(fn, 1)
+  await expect(networkError()).rejects.toBeCruelNetworkError()
+
+  const httpError = cruel.http.status(fn, 500, 1)
+  await expect(httpError()).rejects.toBeCruelHttpError()
+})
+```
+
+## AI SDK Testing
+
+Test AI applications:
+
+```typescript
+import { describe, test, expect } from 'bun:test'
+import { openai } from '@ai-sdk/openai'
+import { generateText, streamText } from 'ai'
+import { cruelModel, presets } from 'cruel/ai-sdk'
+
+describe('AI Application', () => {
+  test('handles rate limits', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      rateLimit: 1
+    })
+
+    await expect(generateText({
+      model,
+      prompt: 'Test'
+    })).rejects.toThrow(/429|rate/i)
+  })
+
+  test('retries on provider errors', async () => {
+    let attempts = 0
+
+    const attemptGenerate = async () => {
+      attempts++
+      const model = cruelModel(openai('gpt-4o'), {
+        overloaded: 0.5
+      })
+
+      return await generateText({
+        model,
+        prompt: 'Test'
+      })
+    }
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        await attemptGenerate()
+        break
+      } catch (error) {
+        if (i === 2) throw error
+      }
+    }
+
+    expect(attempts).toBeLessThanOrEqual(3)
+  })
+
+  test('handles stream interruptions', async () => {
+    const model = cruelModel(openai('gpt-4o'), {
+      streamCut: 1
+    })
+
+    try {
+      const result = streamText({
+        model,
+        prompt: 'Count to 100'
+      })
+
+      for await (const _ of result.textStream) {
+        // Should throw
+      }
+
+      expect(true).toBe(false)
+    } catch (error) {
+      expect(error).toBeDefined()
+    }
+  })
+})
+```
+
+## Deterministic Testing
+
+Use seeds for reproducible tests:
+
+```typescript
+import { cruel } from 'cruel'
+import { describe, test, beforeEach, expect } from 'bun:test'
+
+beforeEach(() => {
+  cruel.reset()
+})
+
+describe('Deterministic chaos', () => {
+  test('produces same results with same seed', () => {
+    // First run
+    cruel.seed(12345)
+    const results1 = Array(10).fill(0).map(() => cruel.coin(0.5))
+
+    // Second run with same seed
+    cruel.seed(12345)
+    const results2 = Array(10).fill(0).map(() => cruel.coin(0.5))
+
+    expect(results1).toEqual(results2)
+  })
+
+  test('chaos behaves predictably', async () => {
+    const fn = async () => 'ok'
+    
+    cruel.seed(99999)
+    const wrapped = cruel.fail(fn, 0.5)
+
+    const results1 = []
+    for (let i = 0; i < 5; i++) {
+      try {
+        await wrapped()
+        results1.push('success')
+      } catch {
+        results1.push('failure')
+      }
+    }
+
+    cruel.seed(99999)
+    const results2 = []
+    for (let i = 0; i < 5; i++) {
+      try {
+        await wrapped()
+        results2.push('success')
+      } catch {
+        results2.push('failure')
+      }
+    }
+
+    expect(results1).toEqual(results2)
+  })
+})
+```
+
+## Scenario Testing
+
+Test specific scenarios:
+
+```typescript
+import { cruel } from 'cruel'
+import { describe, test, expect } from 'bun:test'
+
+describe('Scenario testing', () => {
+  test('network partition', async () => {
+    cruel.scenario('networkPartition', {
+      chaos: { fail: 1 },
+      duration: 1000
+    })
+
+    cruel.play('networkPartition')
+
+    const fn = cruel(async () => 'ok')
+
+    // All calls should fail during partition
+    await expect(fn()).rejects.toThrow()
+
+    // Wait for scenario to end
+    await new Promise(r => setTimeout(r, 1100))
+
+    // Should work again
+    const result = await fn()
+    expect(result).toBe('ok')
+  })
+
+  test('degraded performance', async () => {
+    cruel.scenario('degraded', {
+      chaos: { delay: [500, 1500], fail: 0.1 }
+    })
+
+    cruel.play('degraded')
+
+    const fn = cruel(async () => 'ok')
+    const start = Date.now()
+
+    try {
+      await fn()
+    } catch {}
+
+    const elapsed = Date.now() - start
+    expect(elapsed).toBeGreaterThanOrEqual(500)
+
+    cruel.stop()
+  })
+})
+```
+
+## Snapshot Testing
+
+Test chaos statistics:
+
+```typescript
+import { cruel } from 'cruel'
+import { test, expect } from 'bun:test'
+
+test('chaos statistics snapshot', async () => {
+  cruel.reset()
+  
+  const fn = cruel(async () => 'ok', {
+    fail: 0.1,
+    delay: [50, 100]
+  })
+
+  for (let i = 0; i < 100; i++) {
+    try {
+      await fn()
+    } catch {}
+  }
+
+  const stats = cruel.stats()
+  
+  expect(stats.calls).toBe(100)
+  expect(stats.failures).toBeGreaterThan(5)
+  expect(stats.failures).toBeLessThan(20)
+  expect(stats.avg).toBeGreaterThan(50)
+  expect(stats.avg).toBeLessThan(150)
+})
+```
+
+## Integration Test Example
+
+Complete integration test:
+
+```typescript
+import { describe, test, beforeEach, afterEach, expect } from 'vitest'
+import { cruel } from 'cruel'
+
+class APIClient {
+  async fetch(endpoint: string) {
+    const response = await fetch(`https://api.example.com${endpoint}`)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return response.json()
+  }
+
+  async fetchWithRetry(endpoint: string, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await this.fetch(endpoint)
+      } catch (error) {
+        if (i === retries - 1) throw error
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)))
+      }
+    }
+  }
+}
+
+describe('APIClient Integration', () => {
+  let client: APIClient
+
+  beforeEach(() => {
+    cruel.reset()
+    cruel.patchFetch()
+    client = new APIClient()
+  })
+
+  afterEach(() => {
+    cruel.unpatchFetch()
+  })
+
+  test('handles realistic network conditions', async () => {
+    cruel.intercept('api.example.com', {
+      delay: [100, 500],
+      rateLimit: 0.1,
+      status: [500, 502],
+      fail: 0.05
+    })
+
+    const results = []
+    for (let i = 0; i < 10; i++) {
+      try {
+        const data = await client.fetchWithRetry('/data')
+        results.push('success')
+      } catch {
+        results.push('failure')
+      }
+    }
+
+    const successCount = results.filter(r => r === 'success').length
+    expect(successCount).toBeGreaterThan(0)
+  })
+
+  test('respects rate limits', async () => {
+    cruel.intercept('api.example.com', {
+      rateLimit: { rate: 0.5, retryAfter: 1 }
+    })
+
+    let rateLimited = 0
+    for (let i = 0; i < 10; i++) {
+      try {
+        await client.fetch('/data')
+      } catch (error) {
+        if (error.message.includes('429')) rateLimited++
+      }
+    }
+
+    expect(rateLimited).toBeGreaterThan(0)
+  })
+})
+```
+
+## Performance Testing
+
+Measure performance under chaos:
+
+```typescript
+import { cruel } from 'cruel'
+import { test, expect } from 'bun:test'
+
+test('performance under chaos', async () => {
+  const fn = cruel(async () => {
+    // Simulate work
+    return 'ok'
+  }, {
+    delay: [10, 50],
+    fail: 0.1
+  })
+
+  const start = Date.now()
+  const results = await Promise.allSettled(
+    Array(100).fill(0).map(() => fn())
+  )
+  const elapsed = Date.now() - start
+
+  const successful = results.filter(r => r.status === 'fulfilled').length
+  const failed = results.filter(r => r.status === 'rejected').length
+
+  console.log({
+    total: 100,
+    successful,
+    failed,
+    elapsed: elapsed + 'ms',
+    avgPerRequest: (elapsed / 100).toFixed(2) + 'ms'
+  })
+
+  expect(successful).toBeGreaterThan(80)
+  expect(elapsed).toBeLessThan(10000)
+})
+```
+
+## Next Steps
+
+- Learn about [Production Readiness](/examples/production-readiness)
+- Explore [Combining Patterns](/examples/combining-patterns)
+- Master [AI SDK Streaming](/examples/ai-sdk-streaming)

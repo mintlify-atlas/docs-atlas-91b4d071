@@ -1,0 +1,400 @@
+---
+title: API Resilience Testing
+description: Test HTTP APIs with status codes, rate limits, and server errors
+---
+
+# API Resilience Testing
+
+Validate that your application handles HTTP errors, rate limits, and API failures gracefully.
+
+## HTTP Status Codes
+
+Inject specific HTTP error codes:
+
+```typescript
+import { cruel, CruelHttpError } from 'cruel'
+
+async function callAPI() {
+  const response = await fetch('https://api.example.com/data')
+  return response.json()
+}
+
+// Inject 500 errors (100% of the time)
+const failing = cruel.http.status(callAPI, 500, 1)
+
+try {
+  await failing()
+} catch (error) {
+  if (error instanceof CruelHttpError) {
+    console.error('HTTP error:', error.status) // 500
+  }
+}
+```
+
+## Rate Limiting
+
+Simulate API rate limits:
+
+<Tabs>
+  <Tab title="Simple">
+    Basic rate limit simulation:
+
+    ```typescript
+    import { cruel, CruelRateLimitError } from 'cruel'
+
+    // 10% chance of rate limit
+    const limited = cruel.http.rateLimit(callAPI, 0.1)
+
+    try {
+      await limited()
+    } catch (error) {
+      if (error instanceof CruelRateLimitError) {
+        console.error('Rate limited')
+        console.log('Retry after:', error.retryAfter, 'seconds')
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="With Retry-After">
+    Specify retry-after header:
+
+    ```typescript
+    const limited = cruel.http.rateLimit(callAPI, {
+      rate: 0.2,      // 20% rate limit chance
+      retryAfter: 60  // Retry after 60 seconds
+    })
+
+    try {
+      await limited()
+    } catch (error) {
+      if (error instanceof CruelRateLimitError) {
+        const waitTime = error.retryAfter || 60
+        console.log(`Wait ${waitTime}s before retry`)
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Common HTTP Errors
+
+Pre-built helpers for common scenarios:
+
+<CodeGroup>
+```typescript server-errors
+// Random 5xx errors
+const serverError = cruel.http.serverError(callAPI, 0.1)
+// Returns: 500, 502, 503, or 504
+```
+
+```typescript client-errors
+// Random 4xx errors
+const clientError = cruel.http.clientError(callAPI, 0.1)
+// Returns: 400, 401, 403, or 404
+```
+
+```typescript bad-gateway
+// Specific 502 error
+const gateway = cruel.http.badGateway(callAPI, 0.15)
+```
+
+```typescript unavailable
+// Service unavailable (503)
+const unavailable = cruel.http.serviceUnavailable(callAPI, 0.1)
+```
+
+```typescript gateway-timeout
+// Gateway timeout (504)
+const timeout = cruel.http.gatewayTimeout(callAPI, 0.05)
+```
+</CodeGroup>
+
+## Slow API Responses
+
+Simulate slow API servers:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Fixed delay
+const slow = cruel.http.slowResponse(callAPI, 2000)
+
+// Variable delay
+const variable = cruel.http.slowResponse(callAPI, [1000, 5000])
+
+const start = Date.now()
+const data = await slow()
+console.log(`Took ${Date.now() - start}ms`)
+```
+
+## Fetch Interception
+
+Intercept and modify fetch requests globally:
+
+<Steps>
+
+### Patch Global Fetch
+
+Enable fetch interception:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Enable patching
+cruel.patchFetch()
+
+// Your fetch calls are now intercepted
+const response = await fetch('https://api.example.com/data')
+
+// Cleanup when done
+cruel.unpatchFetch()
+```
+
+### Add Intercept Rules
+
+Define URL patterns and chaos options:
+
+```typescript
+cruel.patchFetch()
+
+// Match by string
+cruel.intercept('api.example.com', {
+  rateLimit: 0.1,
+  delay: [50, 200]
+})
+
+// Match by regex
+cruel.intercept(/\/api\/v1\//, {
+  status: [500, 502, 503],
+  fail: 0.05
+})
+
+// Multiple rules can apply
+const response = await fetch('https://api.example.com/v1/users')
+```
+
+### Response Transformation
+
+Modify response bodies:
+
+```typescript
+cruel.intercept('api.example.com', {
+  truncate: 0.1,   // 10% chance to truncate response
+  malformed: 0.05  // 5% chance of invalid JSON
+})
+
+try {
+  const response = await fetch('https://api.example.com/data')
+  const data = await response.json()
+} catch (error) {
+  console.error('Malformed response:', error)
+}
+```
+
+### Custom Headers
+
+Add or modify response headers:
+
+```typescript
+cruel.intercept('api.example.com', {
+  headers: {
+    'X-Custom-Header': 'test-value',
+    'X-Rate-Limit-Remaining': '0'
+  }
+})
+
+const response = await fetch('https://api.example.com/data')
+console.log(response.headers.get('X-Custom-Header'))
+```
+
+</Steps>
+
+## Testing with Vitest
+
+Comprehensive API resilience tests:
+
+```typescript
+import { cruel, CruelRateLimitError, CruelHttpError } from 'cruel'
+import { describe, test, beforeEach, afterEach, expect } from 'vitest'
+
+describe('API Client Resilience', () => {
+  beforeEach(() => {
+    cruel.reset()
+    cruel.patchFetch()
+  })
+
+  afterEach(() => {
+    cruel.unpatchFetch()
+  })
+
+  test('retries on rate limit', async () => {
+    let attempts = 0
+
+    cruel.intercept('api.example.com', {
+      rateLimit: { rate: 0.5, retryAfter: 1 }
+    })
+
+    const fetchWithRetry = async () => {
+      attempts++
+      const response = await fetch('https://api.example.com/data')
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      return response.json()
+    }
+
+    const resilient = cruel.retry(fetchWithRetry, {
+      attempts: 3,
+      delay: 100,
+      backoff: 'exponential'
+    })
+
+    try {
+      await resilient()
+    } catch {
+      // May still fail after retries
+    }
+
+    expect(attempts).toBeGreaterThan(1)
+  })
+
+  test('handles server errors with fallback', async () => {
+    cruel.intercept('api.example.com', {
+      status: 500,
+      fail: 1
+    })
+
+    const fetchWithFallback = async () => {
+      const response = await fetch('https://api.example.com/data')
+      if (!response.ok) throw new Error('Failed')
+      return response.json()
+    }
+
+    const resilient = cruel.fallback(fetchWithFallback, {
+      fallback: { cached: true, data: [] }
+    })
+
+    const result = await resilient()
+    expect(result.cached).toBe(true)
+  })
+
+  test('respects timeout on slow responses', async () => {
+    cruel.intercept('api.example.com', {
+      delay: 5000
+    })
+
+    const slowFetch = async () => {
+      const response = await fetch('https://api.example.com/data')
+      return response.json()
+    }
+
+    const withTimeout = cruel.withTimeout(slowFetch, { ms: 1000 })
+
+    try {
+      await withTimeout()
+      expect(true).toBe(false)
+    } catch (error) {
+      expect(error.name).toBe('CruelTimeoutError')
+    }
+  })
+
+  test('uses circuit breaker for repeated failures', async () => {
+    cruel.intercept('api.example.com', {
+      status: 500,
+      fail: 1
+    })
+
+    const apiFetch = async () => {
+      const response = await fetch('https://api.example.com/data')
+      if (!response.ok) throw new Error('API Error')
+      return response.json()
+    }
+
+    const breaker = cruel.circuitBreaker(apiFetch, {
+      threshold: 3,
+      timeout: 5000
+    })
+
+    // Fail 3 times to open circuit
+    for (let i = 0; i < 3; i++) {
+      try {
+        await breaker()
+      } catch {}
+    }
+
+    expect(breaker.getState().state).toBe('open')
+
+    // Circuit is now open
+    try {
+      await breaker()
+      expect(true).toBe(false)
+    } catch (error) {
+      expect(error.message).toContain('circuit breaker is open')
+    }
+  })
+})
+```
+
+## Real-World Scenario
+
+Test an API client with multiple failure modes:
+
+```typescript
+import { cruel } from 'cruel'
+
+class APIClient {
+  async request(endpoint: string) {
+    const response = await fetch(`https://api.example.com${endpoint}`)
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After')
+      throw new Error(`Rate limited. Retry after ${retryAfter}s`)
+    }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    return response.json()
+  }
+}
+
+// Setup chaos
+cruel.patchFetch()
+cruel.intercept('api.example.com', {
+  rateLimit: { rate: 0.1, retryAfter: 60 },
+  status: [500, 502, 503],
+  fail: 0.05,
+  delay: [100, 500],
+  slowBody: [200, 1000],
+  truncate: 0.02,
+  malformed: 0.01
+})
+
+const client = new APIClient()
+
+// Test with chaos
+for (let i = 0; i < 20; i++) {
+  try {
+    const data = await client.request('/users')
+    console.log('✓ Success:', data)
+  } catch (error) {
+    console.error('✗ Failed:', error.message)
+  }
+}
+
+cruel.unpatchFetch()
+
+// Check statistics
+const stats = cruel.stats()
+console.log({
+  successRate: ((stats.calls - stats.failures) / stats.calls * 100).toFixed(1) + '%',
+  avgLatency: stats.avg + 'ms',
+  p95: stats.p95 + 'ms',
+  rateLimited: stats.rateLimited
+})
+```
+
+## Next Steps
+
+- Learn about [Combining Patterns](/examples/combining-patterns)
+- Explore [Production Readiness](/examples/production-readiness)
+- Master [Testing Integration](/examples/testing-integration)

@@ -1,0 +1,300 @@
+---
+title: "Stream Chaos API"
+description: "Stream-level chaos testing methods for simulating streaming data failures"
+---
+
+## cruel.stream.cut()
+
+Cuts a stream mid-transfer at a specific rate.
+
+```typescript
+function cut<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Stream cut rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelError("stream cut mid-transfer")` after execution
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const unstableStream = cruel.stream.cut(async () => {
+  return streamData()
+}, 0.15) // 15% chance of stream cut
+```
+
+---
+
+## cruel.stream.pause()
+
+Adds a pause/delay during stream processing.
+
+```typescript
+function pause<T extends AnyFn>(fn: T, ms: number | [number, number] = [500, 2000]): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="ms" type="number | [number, number]" default="[500, 2000]">
+  Pause duration in milliseconds, or range [min, max]
+</ParamField>
+
+**Returns:** `T` - Function with added pause after execution
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const pausingStream = cruel.stream.pause(async () => {
+  return getChunk()
+}, [1000, 3000]) // 1-3 second pause
+```
+
+---
+
+## cruel.stream.corrupt()
+
+Corrupts string data by replacing a random character with �.
+
+```typescript
+function corrupt<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Corruption rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that may corrupt the returned string
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const corruptedData = cruel.stream.corrupt(async () => {
+  return await fetch('/data').then(r => r.text())
+}, 0.05) // 5% corruption
+```
+
+---
+
+## cruel.stream.truncate()
+
+Truncates string data at a random point.
+
+```typescript
+function truncate<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Truncation rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that may truncate the returned string (cuts at 0-80% of length)
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const incompletData = cruel.stream.truncate(async () => {
+  return largeResponse.text()
+}, 0.1)
+```
+
+---
+
+## cruel.stream.reorder()
+
+Reorders string data by swapping halves.
+
+```typescript
+function reorder<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Reorder rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that may reorder the returned string by swapping first and second half
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const scrambledData = cruel.stream.reorder(async () => {
+  return getStreamData()
+}, 0.05)
+```
+
+---
+
+## cruel.stream.duplicate()
+
+Duplicates a portion of the string data.
+
+```typescript
+function duplicate<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Duplication rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that may duplicate a portion (25-50%) of the string and append it
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const duplicatedChunks = cruel.stream.duplicate(async () => {
+  return streamChunk()
+}, 0.1)
+```
+
+---
+
+## cruel.stream.dropChunks()
+
+Drops a chunk of data from the middle of the string.
+
+```typescript
+function dropChunks<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Drop rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that may drop a chunk (20-40%) from the middle of the string
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const missingChunks = cruel.stream.dropChunks(async () => {
+  return streamData()
+})
+```
+
+---
+
+## cruel.stream.corruptChunks()
+
+Alias for `cruel.stream.corrupt()`.
+
+```typescript
+function corruptChunks<T extends AsyncFn<string>>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Corruption rate (0-1)
+</ParamField>
+
+**Returns:** `T` - Function that may corrupt chunks
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const corruptedStream = cruel.stream.corruptChunks(async () => {
+  return getData()
+})
+```
+
+---
+
+## cruel.stream.slow()
+
+Slows down stream with high pauses.
+
+```typescript
+function slow<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with slow stream behavior
+
+**Behavior:** Applies pause of [1000, 5000]ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowStream = cruel.stream.slow(async () => {
+  return streamVideo()
+})
+```
+
+---
+
+## cruel.stream.flaky()
+
+Combines stream cuts and pauses for flaky streaming.
+
+```typescript
+function flaky<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with flaky stream behavior
+
+**Behavior:**
+- 10% chance of stream cut
+- Random pause [100, 1000]ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const flakyStream = cruel.stream.flaky(async () => {
+  return liveData()
+})
+```

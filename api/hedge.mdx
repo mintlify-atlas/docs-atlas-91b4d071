@@ -1,0 +1,63 @@
+---
+title: Hedge
+description: Run multiple parallel requests and use the first successful response
+---
+
+## Function Signature
+
+```typescript
+function withHedge<T extends AnyFn>(
+  fn: T,
+  options: HedgeOptions
+): T
+```
+
+Wraps a function with hedging strategy. Sends multiple parallel requests with delays and returns the first successful response.
+
+## Options
+
+<ParamField path="count" type="number" required>
+  Number of hedged requests to send.
+</ParamField>
+
+<ParamField path="delay" type="number" required>
+  Delay in milliseconds between sending each hedged request.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function that sends multiple hedged requests.
+
+## Types
+
+```typescript
+interface HedgeOptions {
+  count: number
+  delay: number
+}
+```
+
+## Example
+
+```typescript
+import { withHedge } from 'cruel'
+
+const hedgedFetch = withHedge(
+  async (url: string) => {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Request failed')
+    return response.json()
+  },
+  {
+    count: 3,
+    delay: 100
+  }
+)
+
+// Sends 3 requests:
+// - First request sent immediately
+// - Second request sent after 100ms
+// - Third request sent after 200ms
+// Returns the first successful response
+const data = await hedgedFetch('https://api.example.com/data')
+```

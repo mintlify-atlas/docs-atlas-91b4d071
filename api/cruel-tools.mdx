@@ -1,0 +1,395 @@
+---
+title: 'cruelTools() and cruelTool()'
+description: 'Inject chaos into AI tool execution'
+---
+
+## Overview
+
+When using tools/function calling with AI models, `cruelTools()` and `cruelTool()` let you inject failures and delays into tool execution. This helps test how your application handles tool execution errors and timeouts.
+
+## cruelTools()
+
+Wrap multiple tools at once.
+
+### Function Signature
+
+```typescript
+function cruelTools<T extends Record<string, unknown>>(
+  tools: T,
+  options?: CruelChaosOptions
+): wrappedtools<T>
+```
+
+<ParamField path="tools" type="Record<string, Tool>" required>
+  Object containing AI SDK tools (objects with `execute` functions)
+</ParamField>
+
+<ParamField path="options" type="CruelChaosOptions">
+  Chaos configuration. Supports `toolFailure`, `toolTimeout`, `delay`, and `onChaos`.
+</ParamField>
+
+### Returns
+
+Returns an object with the same keys as input, but with wrapped tools. The `execute` function of each tool is wrapped to inject chaos.
+
+## cruelTool()
+
+Wrap a single tool.
+
+### Function Signature
+
+```typescript
+function cruelTool<T extends { execute: Function }>(
+  tool: T,
+  options?: CruelChaosOptions
+): wrappedtool<T>
+```
+
+<ParamField path="tool" type="Tool" required>
+  An AI SDK tool object with an `execute` function
+</ParamField>
+
+<ParamField path="options" type="CruelChaosOptions">
+  Chaos configuration. Supports `toolFailure`, `toolTimeout`, `delay`, and `onChaos`.
+</ParamField>
+
+### Returns
+
+Returns a wrapped tool with the same structure. The `execute` function is wrapped to inject chaos while preserving type signatures.
+
+## Tool-Specific Chaos Options
+
+<ParamField path="toolFailure" type="number">
+  Probability of tool execution throwing an error (0-1)
+  
+  ```typescript
+  toolFailure: 0.1 // 10% chance tool throws "Tool execution failed"
+  ```
+</ParamField>
+
+<ParamField path="toolTimeout" type="number">
+  Probability of tool execution hanging indefinitely (0-1)
+  
+  ```typescript
+  toolTimeout: 0.05 // 5% chance tool never returns
+  ```
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]">
+  Add artificial delay to tool execution in milliseconds
+  
+  ```typescript
+  delay: 500        // Fixed 500ms delay
+  delay: [100, 500] // Random 100-500ms delay
+  ```
+</ParamField>
+
+<ParamField path="onChaos" type="(event: ChaosEvent) => void">
+  Callback invoked when chaos is injected into tool execution
+  
+  ```typescript
+  onChaos: (event) => {
+    if (event.type === 'toolFailure') {
+      console.log('Tool failed!')
+    }
+  }
+  ```
+</ParamField>
+
+## Examples
+
+### Wrapping Multiple Tools
+
+```typescript
+import { z } from 'zod'
+import { tool } from 'ai'
+import { cruelTools } from '@anthropic-ai/cruel'
+
+const tools = cruelTools(
+  {
+    weather: tool({
+      description: 'Get weather for a location',
+      parameters: z.object({ location: z.string() }),
+      execute: async ({ location }) => {
+        const data = await fetch(`/api/weather?location=${location}`)
+        return data.json()
+      },
+    }),
+    calculate: tool({
+      description: 'Perform calculation',
+      parameters: z.object({ expression: z.string() }),
+      execute: async ({ expression }) => {
+        return eval(expression)
+      },
+    }),
+  },
+  {
+    toolFailure: 0.1,  // 10% chance any tool fails
+    delay: [50, 200],   // Random delay
+  }
+)
+
+const result = await generateText({
+  model: openai('gpt-4'),
+  tools,
+  prompt: 'What is the weather in Paris?',
+})
+```
+
+### Wrapping a Single Tool
+
+```typescript
+import { tool } from 'ai'
+import { cruelTool } from '@anthropic-ai/cruel'
+
+const searchTool = cruelTool(
+  tool({
+    description: 'Search the web',
+    parameters: z.object({ query: z.string() }),
+    execute: async ({ query }) => {
+      const results = await searchAPI(query)
+      return results
+    },
+  }),
+  {
+    toolFailure: 0.15,   // 15% failure rate
+    toolTimeout: 0.05,   // 5% timeout rate
+    delay: [100, 500],   // Slow tool
+  }
+)
+
+const result = await generateText({
+  model: anthropic('claude-3-5-sonnet-20241022'),
+  tools: { search: searchTool },
+  prompt: 'Search for AI news',
+})
+```
+
+### Testing Tool Reliability
+
+```typescript
+import { cruelTools } from '@anthropic-ai/cruel'
+
+const toolFailures: string[] = []
+
+const tools = cruelTools(
+  {
+    database: tool({
+      description: 'Query database',
+      parameters: z.object({ sql: z.string() }),
+      execute: async ({ sql }) => db.query(sql),
+    }),
+    cache: tool({
+      description: 'Get from cache',
+      parameters: z.object({ key: z.string() }),
+      execute: async ({ key }) => cache.get(key),
+    }),
+  },
+  {
+    toolFailure: 0.2,
+    onChaos: (event) => {
+      if (event.type === 'toolFailure') {
+        toolFailures.push('Tool failed')
+      }
+    },
+  }
+)
+
+// Test that your code handles tool failures
+try {
+  await generateText({
+    model: openai('gpt-4'),
+    tools,
+    prompt: 'Get data from database',
+    maxSteps: 5, // Allow retries
+  })
+} catch (error) {
+  console.log('Tool failures during execution:', toolFailures.length)
+}
+```
+
+### Simulating Slow External APIs
+
+```typescript
+import { cruelTool } from '@anthropic-ai/cruel'
+
+const apiTool = cruelTool(
+  tool({
+    description: 'Call external API',
+    parameters: z.object({ endpoint: z.string() }),
+    execute: async ({ endpoint }) => {
+      return fetch(endpoint).then(r => r.json())
+    },
+  }),
+  {
+    delay: [1000, 3000], // 1-3 second delay
+    toolTimeout: 0.1,    // 10% chance of timeout
+  }
+)
+
+// Test timeout handling
+const controller = new AbortController()
+setTimeout(() => controller.abort(), 2000) // 2 second timeout
+
+try {
+  await generateText({
+    model: openai('gpt-4'),
+    tools: { api: apiTool },
+    prompt: 'Call the API',
+    abortSignal: controller.signal,
+  })
+} catch (error) {
+  // Should catch abort or tool timeout
+  console.log('Caught timeout:', error.message)
+}
+```
+
+### Per-Tool Configuration
+
+```typescript
+import { cruelTool } from '@anthropic-ai/cruel'
+
+const tools = {
+  // Critical tool - low failure rate
+  payment: cruelTool(paymentTool, {
+    toolFailure: 0.01,  // 1% failure
+    delay: [10, 50],     // Fast
+  }),
+  
+  // Non-critical tool - higher failure rate
+  analytics: cruelTool(analyticsTool, {
+    toolFailure: 0.2,    // 20% failure OK
+    toolTimeout: 0.1,    // 10% timeout OK
+    delay: [500, 2000],  // Can be slow
+  }),
+  
+  // External API - very unreliable
+  thirdParty: cruelTool(externalTool, {
+    toolFailure: 0.3,    // 30% failure
+    toolTimeout: 0.15,   // 15% timeout
+    delay: [1000, 5000], // Very slow
+  }),
+}
+```
+
+### Integration with cruelModel
+
+Combine tool chaos with model chaos:
+
+```typescript
+import { cruelModel, cruelTools } from '@anthropic-ai/cruel'
+
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.1,
+  delay: [50, 150],
+})
+
+const tools = cruelTools(
+  { weather: weatherTool, news: newsTool },
+  {
+    toolFailure: 0.1,
+    delay: [100, 300],
+  }
+)
+
+// Both model AND tools have chaos
+const result = await generateText({
+  model,
+  tools,
+  prompt: 'Get weather and news',
+})
+```
+
+### Testing Error Recovery
+
+```typescript
+import { cruelTools } from '@anthropic-ai/cruel'
+
+describe('Tool error handling', () => {
+  it('retries failed tools', async () => {
+    const tools = cruelTools(
+      { search: searchTool },
+      { toolFailure: 0.5 } // 50% failure rate
+    )
+    
+    const result = await generateText({
+      model: openai('gpt-4'),
+      tools,
+      prompt: 'Search for information',
+      maxSteps: 5, // Allow multiple tool calls/retries
+    })
+    
+    // Model should eventually succeed despite tool failures
+    expect(result.text).toBeTruthy()
+  })
+  
+  it('handles tool timeout gracefully', async () => {
+    const tools = cruelTools(
+      { api: apiTool },
+      { toolTimeout: 1.0 } // Always timeout
+    )
+    
+    await expect(
+      generateText({
+        model: openai('gpt-4'),
+        tools,
+        prompt: 'Call the API',
+        maxSteps: 1,
+      })
+    ).rejects.toThrow() // Or handle gracefully
+  })
+})
+```
+
+## Tool Chaos Events
+
+When `onChaos` is provided, it receives these tool-specific events:
+
+```typescript
+type ToolChaosEvent =
+  | { type: 'toolFailure' }
+  | { type: 'toolTimeout' }
+```
+
+Note: Tool events don't include `modelId` since they're not model-specific.
+
+## Type Safety
+
+The wrapped tools preserve full type information:
+
+```typescript
+const tools = cruelTools({
+  calculate: tool({
+    description: 'Calculate',
+    parameters: z.object({ a: z.number(), b: z.number() }),
+    execute: async ({ a, b }) => a + b,
+  }),
+}, { toolFailure: 0.1 })
+
+// TypeScript knows the return type
+const result: number = await tools.calculate.execute({ a: 1, b: 2 })
+```
+
+## Limitations
+
+### Only Wraps `execute` Function
+
+The wrapper only affects the `execute` function. Tool descriptions, parameters, and other properties are passed through unchanged.
+
+### No Built-in Retry Logic
+
+Cruel injects failures but doesn't provide retry logic. You must implement retries in your application code or rely on the AI SDK's `maxSteps` parameter.
+
+## Chaos Options Reference
+
+See [cruelModel() Chaos Options](/api/cruel-model#chaos-options) for the complete list. Only these apply to tools:
+- `toolFailure`
+- `toolTimeout`
+- `delay`
+- `onChaos`
+
+## Related Functions
+
+- [cruelModel()](/api/cruel-model) - Add chaos to model calls
+- [cruelProvider()](/api/cruel-provider) - Add chaos to entire provider
+- [presets](/api/presets) - Pre-configured chaos scenarios (includes tool chaos)

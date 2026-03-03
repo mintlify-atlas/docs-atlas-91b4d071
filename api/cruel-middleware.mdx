@@ -1,0 +1,256 @@
+---
+title: 'cruelMiddleware()'
+description: 'Apply chaos injection as AI SDK middleware'
+---
+
+## Overview
+
+`cruelMiddleware()` creates an AI SDK v3 middleware that injects chaos into model calls. This is useful when you want to apply chaos to models you don't control directly, or when you want to use AI SDK's experimental middleware composition features.
+
+## Function Signature
+
+```typescript
+function cruelMiddleware(
+  options?: CruelMiddlewareOptions
+): LanguageModelV3Middleware
+```
+
+<ParamField path="options" type="CruelMiddlewareOptions">
+  Chaos configuration options. Same as [CruelChaosOptions](/api/cruel-model#chaos-options).
+</ParamField>
+
+## Returns
+
+Returns an AI SDK v3 middleware object with:
+- `specificationVersion: 'v3'`
+- `wrapGenerate()` - Wraps non-streaming generation
+- `wrapStream()` - Wraps streaming generation
+
+## Usage with AI SDK
+
+### Using `experimental_wrapLanguageModel`
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { experimental_wrapLanguageModel as wrapLanguageModel } from 'ai'
+import { cruelMiddleware } from '@anthropic-ai/cruel'
+
+const model = wrapLanguageModel({
+  model: openai('gpt-4'),
+  middleware: cruelMiddleware({
+    rateLimit: 0.1,
+    delay: [50, 200],
+  }),
+})
+
+const result = await generateText({ model, prompt: 'Hello!' })
+```
+
+### Composing Multiple Middlewares
+
+```typescript
+import { experimental_wrapLanguageModel as wrapLanguageModel } from 'ai'
+import { cruelMiddleware } from '@anthropic-ai/cruel'
+
+const model = wrapLanguageModel({
+  model: openai('gpt-4'),
+  middleware: [
+    // Your custom middleware
+    {
+      specificationVersion: 'v3',
+      wrapGenerate: async ({ doGenerate }) => {
+        console.log('Before generation')
+        const result = await doGenerate()
+        console.log('After generation')
+        return result
+      },
+    },
+    // Add chaos testing
+    cruelMiddleware({
+      rateLimit: 0.05,
+      overloaded: 0.02,
+    }),
+  ],
+})
+```
+
+## Examples
+
+### Basic Middleware Setup
+
+```typescript
+import { anthropic } from '@ai-sdk/anthropic'
+import { experimental_wrapLanguageModel as wrapLanguageModel } from 'ai'
+import { cruelMiddleware } from '@anthropic-ai/cruel'
+
+const model = wrapLanguageModel({
+  model: anthropic('claude-3-5-sonnet-20241022'),
+  middleware: cruelMiddleware({
+    rateLimit: 0.1,
+    streamCut: 0.05,
+    delay: [50, 150],
+  }),
+})
+
+const result = await streamText({ 
+  model, 
+  prompt: 'Write a story' 
+})
+```
+
+### Testing with Observability
+
+```typescript
+import { cruelMiddleware } from '@anthropic-ai/cruel'
+
+const chaosEvents: ChaosEvent[] = []
+
+const model = wrapLanguageModel({
+  model: openai('gpt-4'),
+  middleware: cruelMiddleware({
+    rateLimit: 0.1,
+    overloaded: 0.05,
+    onChaos: (event) => {
+      chaosEvents.push(event)
+      console.log('Chaos:', event.type)
+    },
+  }),
+})
+
+// Test your error handling
+try {
+  await generateText({ model, prompt: 'Hello' })
+} catch (error) {
+  console.log('Caught error after chaos:', chaosEvents)
+}
+```
+
+### Integration Testing
+
+```typescript
+import { cruelMiddleware, presets } from '@anthropic-ai/cruel'
+
+describe('AI integration', () => {
+  it('handles rate limits gracefully', async () => {
+    const model = wrapLanguageModel({
+      model: openai('gpt-4'),
+      middleware: cruelMiddleware({
+        rateLimit: 1.0, // Always rate limit
+      }),
+    })
+    
+    await expect(
+      generateText({ model, prompt: 'Test' })
+    ).rejects.toThrow(/rate limit/i)
+  })
+  
+  it('retries on transient failures', async () => {
+    const model = wrapLanguageModel({
+      model: openai('gpt-4'),
+      middleware: cruelMiddleware({
+        overloaded: 0.5, // 50% chance of overload
+      }),
+    })
+    
+    // Your retry logic should handle this
+    const result = await retryWithBackoff(() =>
+      generateText({ model, prompt: 'Test' })
+    )
+    
+    expect(result.text).toBeTruthy()
+  })
+})
+```
+
+### Conditional Middleware
+
+```typescript
+import { cruelMiddleware, presets } from '@anthropic-ai/cruel'
+
+function createModel(modelId: string) {
+  const baseModel = openai(modelId)
+  
+  // Only apply chaos in test environment
+  if (process.env.NODE_ENV === 'test') {
+    return wrapLanguageModel({
+      model: baseModel,
+      middleware: cruelMiddleware(presets.realistic),
+    })
+  }
+  
+  return baseModel
+}
+
+const model = createModel('gpt-4')
+```
+
+### Streaming Edge Cases
+
+```typescript
+import { cruelMiddleware } from '@anthropic-ai/cruel'
+
+const model = wrapLanguageModel({
+  model: openai('gpt-4'),
+  middleware: cruelMiddleware({
+    streamCut: 0.2,        // 20% chance stream cuts out
+    slowTokens: [100, 500], // Very slow tokens
+    corruptChunks: 0.1,    // 10% corrupt chunks
+  }),
+})
+
+const result = await streamText({ 
+  model, 
+  prompt: 'Write a long story' 
+})
+
+// Test your stream handling
+for await (const chunk of result.textStream) {
+  console.log(chunk) // May throw or produce corrupt text
+}
+```
+
+## Middleware Execution Order
+
+When using multiple middlewares, they execute in array order:
+
+```typescript
+const model = wrapLanguageModel({
+  model: openai('gpt-4'),
+  middleware: [
+    loggingMiddleware,    // Executes first
+    authMiddleware,       // Executes second
+    cruelMiddleware({ rateLimit: 0.1 }), // Executes third
+  ],
+})
+```
+
+For `wrapGenerate` and `wrapStream`:
+1. Middleware #1 runs its pre-call logic
+2. Middleware #2 runs its pre-call logic
+3. Middleware #3 (Cruel) runs its pre-call logic and injects chaos
+4. Actual API call happens
+5. Middleware #3 processes the result (applies post-chaos)
+6. Middleware #2 processes the result
+7. Middleware #1 processes the result
+
+## Limitations
+
+### Language Models Only
+
+Middleware only works with language models. For other model types (embedding, image, speech, etc.), use:
+- [cruelModel()](/api/cruel-model) for individual models
+- [cruelProvider()](/api/cruel-provider) for entire providers
+
+### AI SDK Experimental Feature
+
+The middleware system uses AI SDK's `experimental_wrapLanguageModel`, which may change in future versions. Always check compatibility with your AI SDK version.
+
+## Chaos Options Reference
+
+See [cruelModel() Chaos Options](/api/cruel-model#chaos-options) for the complete list of available chaos configuration options.
+
+## Related Functions
+
+- [cruelModel()](/api/cruel-model) - Wrap individual models directly
+- [cruelProvider()](/api/cruel-provider) - Wrap entire provider
+- [presets](/api/presets) - Pre-configured chaos scenarios

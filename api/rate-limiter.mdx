@@ -1,0 +1,71 @@
+---
+title: Rate Limiter
+description: Limit the rate of function calls using token bucket algorithm
+---
+
+## Function Signature
+
+```typescript
+function createRateLimiter<T extends AnyFn>(
+  fn: T,
+  options: RateLimiterOptions
+): T
+```
+
+Wraps a function with rate limiting using token bucket algorithm. Throws `CruelRateLimitError` when rate limit is exceeded.
+
+## Options
+
+<ParamField path="requests" type="number" required>
+  Number of requests allowed per interval.
+</ParamField>
+
+<ParamField path="interval" type="number" required>
+  Time interval in milliseconds for the rate limit window.
+</ParamField>
+
+<ParamField path="onLimit" type="() => void">
+  Callback invoked when the rate limit is exceeded.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function with rate limiting.
+
+## Types
+
+```typescript
+interface RateLimiterOptions {
+  requests: number
+  interval: number
+  onLimit?: () => void
+}
+```
+
+## Example
+
+```typescript
+import { createRateLimiter, CruelRateLimitError } from 'cruel'
+
+const rateLimitedFetch = createRateLimiter(
+  async (url: string) => {
+    const response = await fetch(url)
+    return response.json()
+  },
+  {
+    requests: 10,
+    interval: 60000, // 10 requests per minute
+    onLimit: () => {
+      console.warn('Rate limit exceeded')
+    }
+  }
+)
+
+try {
+  const data = await rateLimitedFetch('https://api.example.com/data')
+} catch (error) {
+  if (error instanceof CruelRateLimitError) {
+    console.log(`Rate limited. Retry after ${error.retryAfter}s`)
+  }
+}
+```

@@ -1,0 +1,337 @@
+---
+title: Error Classes
+description: Error classes thrown by Cruel chaos testing
+---
+
+Cruel provides a hierarchy of error classes that simulate different failure scenarios. All errors extend from the base `CruelError` class.
+
+## CruelError
+
+Base error class for all Cruel-related errors.
+
+```typescript
+class CruelError extends Error {
+  code: string
+  constructor(message?: string, code?: string)
+}
+```
+
+**Properties:**
+
+<ParamField path="message" type="string" default="cruel: injected failure">
+  Error message
+</ParamField>
+
+<ParamField path="code" type="string" default="CRUEL_FAILURE">
+  Error code for identification
+</ParamField>
+
+<ParamField path="name" type="string" default="CruelError">
+  Error name
+</ParamField>
+
+**Example:**
+
+```typescript
+import { CruelError } from 'cruel'
+
+try {
+  // Your code
+} catch (error) {
+  if (error instanceof CruelError) {
+    console.log('Chaos error:', error.code, error.message)
+  }
+}
+```
+
+## CruelTimeoutError
+
+Thrown when a timeout chaos event occurs.
+
+```typescript
+class CruelTimeoutError extends CruelError
+```
+
+**Properties:**
+
+- `message`: `"cruel: injected timeout"`
+- `code`: `"CRUEL_TIMEOUT"`
+- `name`: `"CruelTimeoutError"`
+
+**When thrown:**
+
+This error is thrown when the `timeout` option triggers, simulating operations that never complete.
+
+**Example:**
+
+```typescript
+import { cruel, CruelTimeoutError } from 'cruel'
+
+const unreliableFetch = cruel(fetch, { timeout: 0.1 })
+
+try {
+  await unreliableFetch('/api/data')
+} catch (error) {
+  if (error instanceof CruelTimeoutError) {
+    console.log('Request timed out')
+  }
+}
+```
+
+## CruelNetworkError
+
+Thrown to simulate various network-related failures.
+
+```typescript
+class CruelNetworkError extends CruelError {
+  constructor(type: string)
+}
+```
+
+**Properties:**
+
+<ParamField path="type" type="string" required>
+  Network error type (e.g., `"packet_loss"`, `"disconnect"`, `"dns_failure"`, `"offline"`)
+</ParamField>
+
+- `message`: `"cruel: network {type}"`
+- `code`: `"CRUEL_NETWORK_{TYPE}"`
+- `name`: `"CruelNetworkError"`
+
+**When thrown:**
+
+- `cruel.network.packetLoss()` - Simulates packet loss
+- `cruel.network.disconnect()` - Simulates connection drops
+- `cruel.network.dns()` - Simulates DNS failures
+- `cruel.network.offline()` - Simulates being offline
+
+**Example:**
+
+```typescript
+import { cruel, CruelNetworkError } from 'cruel'
+
+const unstableRequest = cruel.network.disconnect(fetchData, 0.2)
+
+try {
+  await unstableRequest()
+} catch (error) {
+  if (error instanceof CruelNetworkError) {
+    console.log('Network error:', error.message)
+    // "cruel: network disconnect"
+  }
+}
+```
+
+## CruelHttpError
+
+Thrown to simulate HTTP errors with specific status codes.
+
+```typescript
+class CruelHttpError extends CruelError {
+  status: number
+  constructor(status: number, message?: string)
+}
+```
+
+**Properties:**
+
+<ParamField path="status" type="number" required>
+  HTTP status code
+</ParamField>
+
+- `message`: Custom message or `"cruel: http {status}"`
+- `code`: `"CRUEL_HTTP"`
+- `name`: `"CruelHttpError"`
+
+**When thrown:**
+
+- `cruel.http.status()` - Throws with specific status code(s)
+- `cruel.http.serverError()` - Throws 500, 502, 503, or 504
+- `cruel.http.clientError()` - Throws 400, 401, 403, or 404
+- `cruel.http.badGateway()` - Throws 502
+- `cruel.http.serviceUnavailable()` - Throws 503
+- `cruel.http.gatewayTimeout()` - Throws 504
+
+**Example:**
+
+```typescript
+import { cruel, CruelHttpError } from 'cruel'
+
+const flakeyApi = cruel.http.serverError(callApi, 0.1)
+
+try {
+  await flakeyApi()
+} catch (error) {
+  if (error instanceof CruelHttpError) {
+    console.log('HTTP error:', error.status, error.message)
+    // e.g., "HTTP error: 503 cruel: http 503"
+  }
+}
+```
+
+## CruelRateLimitError
+
+Thrown to simulate rate limiting scenarios. Extends `CruelHttpError` with status 429.
+
+```typescript
+class CruelRateLimitError extends CruelHttpError {
+  retryAfter?: number
+  constructor(retryAfter?: number)
+}
+```
+
+**Properties:**
+
+<ParamField path="retryAfter" type="number | undefined">
+  Suggested retry delay in seconds
+</ParamField>
+
+- `status`: `429`
+- `message`: `"cruel: rate limited"`
+- `name`: `"CruelRateLimitError"`
+
+**When thrown:**
+
+- `cruel.http.rateLimit()` - Simulates rate limiting
+- `cruel.ai.rateLimit()` - Simulates AI API rate limiting
+
+**Example:**
+
+```typescript
+import { cruel, CruelRateLimitError } from 'cruel'
+
+const rateLimitedApi = cruel.http.rateLimit(apiCall, { rate: 0.1, retryAfter: 30 })
+
+try {
+  await rateLimitedApi()
+} catch (error) {
+  if (error instanceof CruelRateLimitError) {
+    console.log(`Rate limited. Retry after ${error.retryAfter}s`)
+  }
+}
+```
+
+## CruelAIError
+
+Thrown to simulate AI-specific errors (for AI SDK integration).
+
+```typescript
+class CruelAIError extends CruelError {
+  type: string
+  constructor(type: string, message?: string)
+}
+```
+
+**Properties:**
+
+<ParamField path="type" type="string" required>
+  AI error type (e.g., `"rate_limit"`, `"overloaded"`, `"context_length"`, `"content_filter"`, `"model_unavailable"`, `"stream_cut"`)
+</ParamField>
+
+- `message`: Custom message or `"cruel: ai {type}"`
+- `code`: `"CRUEL_AI_{TYPE}"`
+- `name`: `"CruelAIError"`
+
+**When thrown:**
+
+- `cruel.ai.rateLimit()` - AI rate limiting
+- `cruel.ai.overloaded()` - Model overloaded
+- `cruel.ai.contextLength()` - Context length exceeded
+- `cruel.ai.contentFilter()` - Content filter triggered
+- `cruel.ai.modelUnavailable()` - Model not available
+- `cruel.ai.streamCut()` - Stream terminated unexpectedly
+
+**Example:**
+
+```typescript
+import { cruel, CruelAIError } from 'cruel'
+
+const unreliableAI = cruel.ai.contextLength(generateText, 0.05)
+
+try {
+  await unreliableAI()
+} catch (error) {
+  if (error instanceof CruelAIError) {
+    console.log('AI error:', error.type, error.message)
+    // "AI error: context_length cruel: ai context length exceeded"
+  }
+}
+```
+
+## CruelAPIError
+
+AI SDK-compatible API error for middleware and model integration.
+
+```typescript
+class CruelAPIError extends Error {
+  readonly statusCode: number
+  readonly isRetryable: boolean
+  readonly url: string
+  readonly requestBodyValues: Record<string, unknown>
+  readonly responseHeaders?: Record<string, string>
+  readonly responseBody?: string
+  readonly data?: unknown
+}
+```
+
+**Properties:**
+
+<ParamField path="statusCode" type="number" required>
+  HTTP status code
+</ParamField>
+
+<ParamField path="isRetryable" type="boolean">
+  Whether the error is retryable (defaults to true for 408, 409, 429, 5xx)
+</ParamField>
+
+<ParamField path="data" type="unknown">
+  Additional error data
+</ParamField>
+
+**When thrown:**
+
+Used by AI SDK integration functions:
+- `cruelModel()` - When AI model calls fail
+- `cruelProvider()` - When provider operations fail
+- `cruelMiddleware()` - When middleware intercepts failures
+
+**Example:**
+
+```typescript
+import { cruelModel, CruelAPIError } from 'cruel'
+import { anthropic } from '@ai-sdk/anthropic'
+
+const model = cruelModel(
+  anthropic('claude-3-5-sonnet-20241022'),
+  { rateLimit: 0.1 }
+)
+
+try {
+  const result = await generateText({ model, prompt: 'Hello' })
+} catch (error) {
+  if (error instanceof CruelAPIError) {
+    console.log('Status:', error.statusCode)
+    console.log('Retryable:', error.isRetryable)
+  }
+}
+```
+
+## Error Helper Functions
+
+Cruel exports helper functions for creating AI SDK-compatible errors:
+
+```typescript
+import {
+  rateLimitError,
+  overloadedError,
+  contextLengthError,
+  contentFilterError,
+  modelUnavailableError,
+  invalidApiKeyError,
+  quotaExceededError,
+  streamCutError,
+  emptyResponseError
+} from 'cruel'
+```
+
+Each function returns a `CruelAPIError` with appropriate status codes and messages.

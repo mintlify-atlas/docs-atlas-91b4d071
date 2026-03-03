@@ -1,0 +1,181 @@
+---
+title: Fetch interception
+description: Patch global fetch to inject chaos into all HTTP requests
+---
+
+Fetch interception allows you to inject chaos into all HTTP requests in your application without wrapping individual fetch calls.
+
+## Patch fetch globally
+
+```typescript
+import { cruel } from "cruel"
+
+// Patch the global fetch
+cruel.patchFetch()
+
+// Now ALL fetch calls have chaos
+await fetch("https://api.example.com/users")
+await fetch("https://api.example.com/posts")
+```
+
+## Intercept specific URLs
+
+Target specific URLs or patterns:
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.patchFetch()
+
+// Intercept OpenAI API
+cruel.intercept("api.openai.com", {
+  rateLimit: { rate: 0.1, retryAfter: 60 },
+  delay: [100, 500],
+})
+
+// Intercept with regex
+cruel.intercept(/api\.anthropic\.com/, {
+  fail: 0.1,
+  status: [529],
+})
+
+// Intercept any API
+cruel.intercept(/\/api\//, {
+  timeout: 0.05,
+  delay: [200, 1000],
+})
+```
+
+## Chaos options
+
+```typescript
+cruel.intercept("api.example.com", {
+  // Failures
+  fail: 0.1,
+  timeout: 0.05,
+  
+  // Status codes
+  status: 500,
+  // or array
+  status: [500, 502, 503],
+  
+  // Rate limiting
+  rateLimit: 0.1,
+  // or with retry-after
+  rateLimit: {
+    rate: 0.1,
+    retryAfter: 60,
+  },
+  
+  // Delays
+  delay: [100, 500],
+  slowBody: [1000, 3000],
+  
+  // Response manipulation
+  truncate: 0.1,
+  malformed: 0.05,
+  headers: {
+    "X-Chaos": "true",
+  },
+})
+```
+
+## Unpatch fetch
+
+```typescript
+// Restore original fetch
+cruel.unpatchFetch()
+
+// Fetch works normally again
+await fetch("https://api.example.com")
+```
+
+## Clear intercepts
+
+```typescript
+// Remove all intercept rules
+cruel.clearIntercepts()
+
+// Fetch still patched but no chaos
+await fetch("https://api.example.com")
+```
+
+## Real-world example
+
+```typescript
+import { cruel } from "cruel"
+
+// Patch fetch
+cruel.patchFetch()
+
+// Simulate third-party API issues
+cruel.intercept("api.stripe.com", {
+  rateLimit: { rate: 0.05, retryAfter: 60 },
+  delay: [50, 200],
+})
+
+cruel.intercept("api.github.com", {
+  status: [403, 503],
+  fail: 0.02,
+})
+
+// Your application code
+async function processPayment(amount: number) {
+  // This fetch may have chaos
+  const response = await fetch("https://api.stripe.com/v1/charges", {
+    method: "POST",
+    body: JSON.stringify({ amount }),
+  })
+  
+  if (response.status === 429) {
+    const retryAfter = response.headers.get("Retry-After")
+    console.log(`Rate limited, retry after ${retryAfter}s`)
+    throw new Error("Rate limited")
+  }
+  
+  return response.json()
+}
+```
+
+## Testing with intercepts
+
+```typescript
+import { test, beforeEach, afterEach } from "bun:test"
+import { cruel } from "cruel"
+
+beforeEach(() => {
+  cruel.patchFetch()
+  cruel.clearIntercepts()
+})
+
+afterEach(() => {
+  cruel.unpatchFetch()
+})
+
+test("handles API rate limits", async () => {
+  cruel.intercept("api.example.com", {
+    rateLimit: 1, // Always rate limit
+  })
+  
+  const response = await fetch("https://api.example.com/data")
+  expect(response.status).toBe(429)
+  expect(response.headers.get("Retry-After")).toBe("60")
+})
+
+test("handles server errors", async () => {
+  cruel.intercept("api.example.com", {
+    status: 503,
+    fail: 1,
+  })
+  
+  await expect(fetch("https://api.example.com/data")).rejects.toThrow()
+})
+```
+
+<Warning>
+Patching `fetch` is global and affects all HTTP requests. Use `unpatchFetch()` to restore original behavior.
+</Warning>
+
+<Note>
+Intercept rules are matched in order. The first matching pattern applies its chaos options.
+</Note>

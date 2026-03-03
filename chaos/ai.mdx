@@ -1,0 +1,594 @@
+---
+title: 'AI Chaos'
+description: 'Simulate AI/LLM failures including rate limits, overloaded models, and streaming issues'
+---
+
+# AI Chaos
+
+AI chaos methods simulate failures specific to AI and LLM services, including rate limiting, model unavailability, context length errors, content filtering, and streaming issues.
+
+## rateLimit
+
+Simulates AI service rate limiting.
+
+```typescript
+cruel.ai.rateLimit(fn, options)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap with rate limiting
+</ParamField>
+
+<ParamField path="options" type="number | object" default="0.1">
+  Rate limit probability (number) or configuration:
+  - `rate`: Probability of rate limit (0 to 1)
+  - `retryAfter`: Retry-After value in seconds (default: 60)
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Simple Rate Limit
+import { cruel } from 'cruel'
+
+const generateText = async (prompt: string) => {
+  return openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt }]
+  })
+}
+
+// 10% rate limit probability
+const limitedGenerate = cruel.ai.rateLimit(generateText, 0.1)
+
+try {
+  const result = await limitedGenerate('Hello')
+} catch (error) {
+  // CruelAIError: rate_limit
+  console.error('Rate limited:', error.message)
+}
+```
+
+```typescript With Retry-After
+// Rate limit with custom retry-after
+const limitedGenerate = cruel.ai.rateLimit(generateText, {
+  rate: 0.15,
+  retryAfter: 120 // Retry after 120 seconds
+})
+
+try {
+  await limitedGenerate('Write a story')
+} catch (error) {
+  if (error.type === 'rate_limit') {
+    console.log('Rate limited, retry after 120s')
+  }
+}
+```
+</CodeGroup>
+
+---
+
+## overloaded
+
+Simulates AI service being overloaded.
+
+```typescript
+cruel.ai.overloaded(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.05">
+  Probability of overload error (0 to 1). Default is 0.05 (5%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const complete = async (prompt: string) => {
+  return anthropic.messages.create({
+    model: 'claude-3-opus-20240229',
+    messages: [{ role: 'user', content: prompt }]
+  })
+}
+
+// 8% chance of overload
+const flakyComplete = cruel.ai.overloaded(complete, 0.08)
+
+try {
+  await flakyComplete('Analyze this data...')
+} catch (error) {
+  // CruelAIError: model is overloaded
+  console.error('Service overloaded, try again later')
+}
+```
+
+---
+
+## contextLength
+
+Simulates context length exceeded errors.
+
+```typescript
+cruel.ai.contextLength(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.02">
+  Probability of context length error (0 to 1). Default is 0.02 (2%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const summarize = async (text: string) => {
+  return openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: `Summarize: ${text}` }]
+  })
+}
+
+// 3% chance of context length error
+const limitedSummarize = cruel.ai.contextLength(summarize, 0.03)
+
+try {
+  await limitedSummarize(longDocument)
+} catch (error) {
+  // CruelAIError: context length exceeded
+  if (error.type === 'context_length') {
+    console.log('Document too long, chunking required')
+  }
+}
+```
+
+---
+
+## contentFilter
+
+Simulates content filtering/moderation errors.
+
+```typescript
+cruel.ai.contentFilter(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.01">
+  Probability of content filter error (0 to 1). Default is 0.01 (1%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const moderate = async (userInput: string) => {
+  return openai.moderations.create({
+    input: userInput
+  })
+}
+
+// 2% chance of content filter trigger
+const filteredModerate = cruel.ai.contentFilter(moderate, 0.02)
+
+try {
+  await filteredModerate(userMessage)
+} catch (error) {
+  // CruelAIError: content filter triggered
+  console.error('Content flagged by filter')
+}
+```
+
+---
+
+## modelUnavailable
+
+Simulates model unavailability errors.
+
+```typescript
+cruel.ai.modelUnavailable(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.02">
+  Probability of model unavailable error (0 to 1). Default is 0.02 (2%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const generateImage = async (prompt: string) => {
+  return openai.images.generate({
+    model: 'dall-e-3',
+    prompt
+  })
+}
+
+// 5% chance model is unavailable
+const flakyGenerate = cruel.ai.modelUnavailable(generateImage, 0.05)
+
+try {
+  await flakyGenerate('A sunset over mountains')
+} catch (error) {
+  // CruelAIError: model not available
+  console.error('Model currently unavailable')
+}
+```
+
+---
+
+## slowTokens
+
+Simulates slow token generation.
+
+```typescript
+cruel.ai.slowTokens(fn, ms)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+<ParamField path="ms" type="number | [number, number]" default="[50, 200]">
+  Delay per token in milliseconds. Can be fixed or range `[min, max]`
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Fixed Delay
+import { cruel } from 'cruel'
+
+const streamCompletion = async (prompt: string) => {
+  return openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt }],
+    stream: true
+  })
+}
+
+// Add 100ms delay per token
+const slowStream = cruel.ai.slowTokens(streamCompletion, 100)
+
+const stream = await slowStream('Write a poem')
+// Each token arrives with 100ms delay
+```
+
+```typescript Variable Delay
+// Random delay between 30ms and 150ms per token
+const variableStream = cruel.ai.slowTokens(streamCompletion, [30, 150])
+
+const stream = await variableStream('Explain quantum physics')
+// Realistic variable token speed
+```
+</CodeGroup>
+
+---
+
+## streamCut
+
+Abruptly terminates AI streaming mid-response.
+
+```typescript
+cruel.ai.streamCut(fn, rate)
+```
+
+<ParamField path="fn" type="function" required>
+  The streaming AI function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of stream cut (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const streamChat = async (messages: Message[]) => {
+  return openai.chat.completions.create({
+    model: 'gpt-4',
+    messages,
+    stream: true
+  })
+}
+
+// 12% chance of stream being cut
+const unreliableStream = cruel.ai.streamCut(streamChat, 0.12)
+
+try {
+  const stream = await unreliableStream(messages)
+  // Process stream...
+} catch (error) {
+  // CruelAIError: stream terminated unexpectedly
+  console.error('Stream interrupted:', error.type)
+}
+```
+
+---
+
+## partialResponse
+
+Returns incomplete/truncated AI responses.
+
+```typescript
+cruel.ai.partialResponse(fn, rate)
+```
+
+<ParamField path="fn" type="AsyncFn<string>" required>
+  Function returning string response to truncate
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Probability of partial response (0 to 1). Default is 0.1 (10%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const generate = async (prompt: string): Promise<string> => {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt }]
+  })
+  return completion.choices[0].message.content
+}
+
+// 15% chance of partial response
+const partialGenerate = cruel.ai.partialResponse(generate, 0.15)
+
+const response = await partialGenerate('Write an essay')
+// Response may be cut off between 10-80% of original length
+```
+
+<Note>
+  Partial responses are truncated between 10% and 80% of the original response length.
+</Note>
+
+---
+
+## invalidJson
+
+Corrupts JSON responses from AI.
+
+```typescript
+cruel.ai.invalidJson(fn, rate)
+```
+
+<ParamField path="fn" type="AsyncFn<string>" required>
+  Function returning JSON string response
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.05">
+  Probability of JSON corruption (0 to 1). Default is 0.05 (5%)
+</ParamField>
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const extractData = async (text: string): Promise<string> => {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [
+      { role: 'system', content: 'Extract data as JSON' },
+      { role: 'user', content: text }
+    ]
+  })
+  return completion.choices[0].message.content
+}
+
+// 8% chance of invalid JSON
+const flakyExtract = cruel.ai.invalidJson(extractData, 0.08)
+
+const jsonStr = await flakyExtract('Extract name and age')
+
+try {
+  const data = JSON.parse(jsonStr)
+} catch (error) {
+  // JSON parsing fails due to corruption
+  console.error('Invalid JSON received from AI')
+}
+```
+
+---
+
+## realistic
+
+Combines common AI issues for realistic testing.
+
+```typescript
+cruel.ai.realistic(fn)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+### Behavior
+
+Applies:
+- 5% rate limit probability
+- 2% overload probability
+- 30-100ms token delay
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const chat = async (prompt: string) => {
+  return openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt }]
+  })
+}
+
+// Realistic AI service behavior
+const realisticChat = cruel.ai.realistic(chat)
+
+try {
+  const response = await realisticChat('Hello')
+} catch (error) {
+  // May hit rate limits or overload
+  console.error('AI error:', error.type)
+}
+```
+
+---
+
+## nightmare
+
+Maximum AI chaos for stress testing.
+
+```typescript
+cruel.ai.nightmare(fn)
+```
+
+<ParamField path="fn" type="function" required>
+  The AI function to wrap
+</ParamField>
+
+### Behavior
+
+Applies:
+- 20% rate limit probability
+- 10% overload probability
+- 15% stream cut probability
+- 100-500ms token delay
+
+### Example
+
+```typescript
+import { cruel } from 'cruel'
+
+const generateLong = async (prompt: string) => {
+  return openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: prompt }],
+    stream: true
+  })
+}
+
+// Extreme AI chaos
+const nightmareGenerate = cruel.ai.nightmare(generateLong)
+
+try {
+  const stream = await nightmareGenerate('Write a novel')
+} catch (error) {
+  // Frequent failures and slow responses
+  console.error('AI nightmare:', error)
+}
+```
+
+<Warning>
+  `nightmare` mode creates extreme conditions unsuitable for production. Use for stress testing only.
+</Warning>
+
+---
+
+## Combining AI Chaos
+
+```typescript
+import { cruel } from 'cruel'
+
+const aiCall = async () => { /* ... */ }
+
+// Layer multiple AI chaos methods
+let chaotic = aiCall
+chaotic = cruel.ai.rateLimit(chaotic, 0.1)
+chaotic = cruel.ai.overloaded(chaotic, 0.05)
+chaotic = cruel.ai.slowTokens(chaotic, [50, 150])
+chaotic = cruel.ai.streamCut(chaotic, 0.08)
+
+await chaotic()
+```
+
+## Real-World Scenarios
+
+<Tabs>
+  <Tab title="Production Load">
+    ```typescript
+    // Simulate production AI service
+    const prodAI = cruel.ai.realistic(
+      cruel.ai.slowTokens(aiCall, [40, 120])
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Peak Hours">
+    ```typescript
+    // High traffic with rate limits
+    const peakAI = cruel.ai.rateLimit(
+      cruel.ai.overloaded(aiCall, 0.15),
+      0.25
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Unreliable Network">
+    ```typescript
+    // AI with network issues
+    const unstableAI = cruel.ai.streamCut(
+      cruel.ai.slowTokens(aiCall, [100, 300]),
+      0.2
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Error Handling
+
+```typescript
+import { cruel } from 'cruel'
+
+const generateWithRetry = async (prompt: string, maxRetries = 3) => {
+  let attempt = 0
+  
+  while (attempt < maxRetries) {
+    try {
+      const flakyGenerate = cruel.ai.realistic(generate)
+      return await flakyGenerate(prompt)
+    } catch (error) {
+      attempt++
+      
+      if (error.type === 'rate_limit') {
+        const retryAfter = 60
+        console.log(`Rate limited, waiting ${retryAfter}s`)
+        await new Promise(r => setTimeout(r, retryAfter * 1000))
+      } else if (error.type === 'overloaded') {
+        console.log(`Service overloaded, retry ${attempt}`)
+        await new Promise(r => setTimeout(r, 5000))
+      } else {
+        throw error
+      }
+    }
+  }
+  
+  throw new Error('Max retries exceeded')
+}
+```
+
+## Source Reference
+
+AI methods are defined in `index.ts:527-635`.

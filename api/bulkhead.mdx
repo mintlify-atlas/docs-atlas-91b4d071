@@ -1,0 +1,67 @@
+---
+title: Bulkhead
+description: Limit concurrent function executions to prevent resource exhaustion
+---
+
+## Function Signature
+
+```typescript
+function createBulkhead<T extends AnyFn>(
+  fn: T,
+  options: BulkheadOptions
+): T
+```
+
+Wraps a function with bulkhead pattern to limit concurrent executions. Prevents resource exhaustion by queueing excess calls.
+
+## Options
+
+<ParamField path="maxConcurrent" type="number" required>
+  Maximum number of concurrent function executions allowed.
+</ParamField>
+
+<ParamField path="maxQueue" type="number">
+  Maximum number of calls to queue when at max concurrency. If not set, the queue is unbounded.
+</ParamField>
+
+<ParamField path="onReject" type="() => void">
+  Callback invoked when a call is rejected because the queue is full.
+</ParamField>
+
+## Return Type
+
+Returns the wrapped function with concurrency limiting.
+
+## Types
+
+```typescript
+interface BulkheadOptions {
+  maxConcurrent: number
+  maxQueue?: number
+  onReject?: () => void
+}
+```
+
+## Example
+
+```typescript
+import { createBulkhead } from 'cruel'
+
+const limitedFetch = createBulkhead(
+  async (url: string) => {
+    const response = await fetch(url)
+    return response.json()
+  },
+  {
+    maxConcurrent: 5,
+    maxQueue: 10,
+    onReject: () => {
+      console.warn('Too many requests queued')
+    }
+  }
+)
+
+// Only 5 requests will run concurrently, rest will queue
+const promises = urls.map(url => limitedFetch(url))
+const results = await Promise.all(promises)
+```

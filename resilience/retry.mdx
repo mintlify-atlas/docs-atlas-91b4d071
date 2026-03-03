@@ -1,0 +1,361 @@
+---
+title: Retry
+description: Automatically retry failed operations with configurable backoff strategies
+---
+
+## Overview
+
+The Retry pattern automatically retries failed operations with configurable delays and backoff strategies. This helps handle transient failures that may succeed on subsequent attempts.
+
+## When to Use
+
+- Network requests that may fail due to temporary issues
+- Rate-limited APIs that return 429 errors
+- Database operations that may fail due to transient locks
+- Any operation where temporary failures are expected
+
+## API Reference
+
+### Function Signature
+
+```typescript
+function withRetry<T extends AnyFn>(fn: T, options: RetryOptions): T
+```
+
+### Options
+
+<ParamField path="attempts" type="number" required>
+  Maximum number of retry attempts. Must be at least 1. This is the total number of attempts including the initial try.
+</ParamField>
+
+<ParamField path="delay" type="number | [number, number]" default="1000">
+  Base delay in milliseconds between retries. Can be a single number or a range `[min, max]` for random delays.
+</ParamField>
+
+<ParamField path="backoff" type="'fixed' | 'linear' | 'exponential'">
+  Backoff strategy for increasing delays:
+  - `fixed`: Use the same delay for all retries
+  - `linear`: Multiply delay by attempt number (delay × attempt)
+  - `exponential`: Exponentially increase delay (delay × 2^(attempt-1))
+</ParamField>
+
+<ParamField path="maxDelay" type="number">
+  Maximum delay in milliseconds. Caps the delay calculated by backoff strategies.
+</ParamField>
+
+<ParamField path="onRetry" type="(attempt: number, error: Error) => void">
+  Callback function executed before each retry attempt. Receives the attempt number (1-indexed) and the error that caused the retry.
+</ParamField>
+
+<ParamField path="retryIf" type="(error: Error) => boolean">
+  Predicate function to determine if an error should trigger a retry. If it returns `false`, the error is thrown immediately without retrying.
+</ParamField>
+
+## Examples
+
+### Basic Retry
+
+```typescript
+import { withRetry } from 'cruel'
+
+const fetchUser = async (id: string) => {
+  const response = await fetch(`https://api.example.com/users/${id}`)
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
+}
+
+const resilientFetch = withRetry(fetchUser, {
+  attempts: 3,
+  delay: 1000,  // 1 second between retries
+})
+
+// Will retry up to 3 times with 1 second delay
+const user = await resilientFetch('123')
+```
+
+### Exponential Backoff
+
+```typescript
+const apiCall = withRetry(fetchData, {
+  attempts: 5,
+  delay: 1000,           // Base delay: 1s
+  backoff: 'exponential', // 1s, 2s, 4s, 8s, 16s
+  maxDelay: 10000,       // Cap at 10 seconds
+})
+```
+
+### Linear Backoff
+
+```typescript
+const apiCall = withRetry(fetchData, {
+  attempts: 4,
+  delay: 500,          // Base delay: 500ms
+  backoff: 'linear',   // 500ms, 1s, 1.5s, 2s
+})
+```
+
+### Random Delay Range
+
+```typescript
+// Add jitter to prevent thundering herd
+const apiCall = withRetry(fetchData, {
+  attempts: 3,
+  delay: [1000, 3000],  // Random delay between 1-3 seconds
+  backoff: 'exponential',
+})
+```
+
+### Conditional Retries
+
+```typescript
+import { CruelRateLimitError, CruelHttpError } from 'cruel'
+
+const smartRetry = withRetry(apiCall, {
+  attempts: 5,
+  delay: 1000,
+  backoff: 'exponential',
+  retryIf: (error) => {
+    // Only retry rate limits and 5xx errors
+    if (error instanceof CruelRateLimitError) return true
+    if (error instanceof CruelHttpError) {
+      return error.status >= 500
+    }
+    return false
+  },
+})
+```
+
+### With Retry Callbacks
+
+```typescript
+const monitoredFetch = withRetry(fetchData, {
+  attempts: 3,
+  delay: 1000,
+  backoff: 'exponential',
+  onRetry: (attempt, error) => {
+    console.log(`Retry attempt ${attempt} after error: ${error.message}`)
+    metrics.increment('api.retry', { attempt })
+  },
+})
+```
+
+### Rate Limit Handling
+
+```typescript
+import { CruelRateLimitError } from 'cruel'
+
+const rateLimitAwareRetry = withRetry(apiCall, {
+  attempts: 5,
+  delay: 1000,
+  backoff: 'exponential',
+  maxDelay: 60000,
+  retryIf: (error) => {
+    return error instanceof CruelRateLimitError ||
+           error.message.includes('rate limit')
+  },
+  onRetry: (attempt, error) => {
+    if (error instanceof CruelRateLimitError && error.retryAfter) {
+      console.log(`Rate limited, retry after ${error.retryAfter}s`)
+    }
+  },
+})
+```
+
+## Backoff Strategies
+
+### Fixed Backoff
+
+Uses the same delay for all retries:
+
+```typescript
+withRetry(fn, {
+  attempts: 4,
+  delay: 1000,
+  backoff: 'fixed',
+})
+// Delays: 1s, 1s, 1s
+```
+
+### Linear Backoff
+
+Increases delay linearly with attempt number:
+
+```typescript
+withRetry(fn, {
+  attempts: 4,
+  delay: 1000,
+  backoff: 'linear',
+})
+// Delays: 1s, 2s, 3s
+```
+
+### Exponential Backoff
+
+Doubles the delay on each retry:
+
+```typescript
+withRetry(fn, {
+  attempts: 5,
+  delay: 1000,
+  backoff: 'exponential',
+})
+// Delays: 1s, 2s, 4s, 8s
+```
+
+### Exponential with Jitter
+
+Combine exponential backoff with random delay:
+
+```typescript
+withRetry(fn, {
+  attempts: 5,
+  delay: [500, 1500],    // Random base delay
+  backoff: 'exponential',
+  maxDelay: 30000,
+})
+// Prevents thundering herd problem
+```
+
+## Combining with Other Patterns
+
+### Retry + Timeout
+
+```typescript
+import { withRetry, withTimeout } from 'cruel'
+
+// Apply timeout first, then retry
+const resilientFetch = withRetry(
+  withTimeout(fetchData, { ms: 5000 }),
+  {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+  }
+)
+```
+
+### Retry + Circuit Breaker
+
+```typescript
+import { withRetry, createCircuitBreaker } from 'cruel'
+
+// Retry for transient failures, circuit breaker for sustained failures
+const resilientAPI = createCircuitBreaker(
+  withRetry(apiCall, {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+  }),
+  {
+    threshold: 5,
+    timeout: 30000,
+  }
+)
+```
+
+### Retry + Fallback
+
+```typescript
+import { withRetry, withFallback } from 'cruel'
+
+// Try multiple times, then fall back
+const safeAPI = withFallback(
+  withRetry(apiCall, {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential',
+  }),
+  {
+    fallback: defaultValue,
+  }
+)
+```
+
+### With Compose
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilientAPI = cruel.compose(fetchData, {
+  retry: {
+    attempts: 5,
+    delay: 1000,
+    backoff: 'exponential',
+    maxDelay: 30000,
+  },
+  timeoutMs: 10000,
+  circuitBreaker: {
+    threshold: 10,
+    timeout: 60000,
+  },
+})
+```
+
+## Advanced Examples
+
+### Custom Error Classification
+
+```typescript
+const shouldRetry = (error: Error): boolean => {
+  // Retry network errors
+  if (error.name === 'NetworkError') return true
+  
+  // Retry 5xx server errors
+  if (error instanceof CruelHttpError) {
+    return error.status >= 500 && error.status < 600
+  }
+  
+  // Retry timeouts
+  if (error instanceof CruelTimeoutError) return true
+  
+  // Don't retry client errors (4xx)
+  return false
+}
+
+const smartAPI = withRetry(apiCall, {
+  attempts: 5,
+  delay: 1000,
+  backoff: 'exponential',
+  retryIf: shouldRetry,
+})
+```
+
+### Database Retry with Deadlock Detection
+
+```typescript
+const dbQuery = withRetry(executeQuery, {
+  attempts: 5,
+  delay: 100,
+  backoff: 'exponential',
+  maxDelay: 2000,
+  retryIf: (error) => {
+    // Retry deadlocks and lock timeouts
+    return error.message.includes('deadlock') ||
+           error.message.includes('lock timeout')
+  },
+  onRetry: (attempt, error) => {
+    console.warn(`Database retry ${attempt}: ${error.message}`)
+  },
+})
+```
+
+## Best Practices
+
+- **Use exponential backoff** for external APIs to give services time to recover
+- **Add jitter** (random delays) to prevent thundering herd problems
+- **Set max delays** to prevent excessive wait times
+- **Be selective** about what to retry using `retryIf`
+- **Don't retry** client errors (4xx) - they won't succeed on retry
+- **Log retries** for observability and debugging
+- **Combine with timeouts** to prevent hanging on slow operations
+- **Consider circuit breakers** for sustained failures
+
+## Common Retry Configurations
+
+| Use Case | Attempts | Delay | Backoff | Max Delay |
+|----------|----------|-------|---------|------------|
+| External API | 3-5 | 1000ms | exponential | 30000ms |
+| Rate limited API | 5-10 | 2000ms | exponential | 60000ms |
+| Database query | 3 | 100ms | exponential | 2000ms |
+| File I/O | 3 | 500ms | linear | 2000ms |
+| Critical operation | 10 | 1000ms | exponential | 60000ms |

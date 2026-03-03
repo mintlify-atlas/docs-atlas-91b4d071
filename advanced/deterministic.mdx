@@ -1,0 +1,246 @@
+---
+title: Deterministic mode
+description: Make chaos reproducible with seeding
+---
+
+Deterministic mode allows you to reproduce exact chaos behavior by seeding the random number generator, making tests reliable and debuggable.
+
+## Set a seed
+
+```typescript
+import { cruel } from "cruel"
+
+// Set seed for deterministic chaos
+cruel.seed(12345)
+
+// Chaos will be identical every time
+const api = cruel(fetch, { fail: 0.1 })
+await api("https://api.example.com") // Same result every run
+```
+
+## Testing with seeds
+
+```typescript
+import { test, beforeEach } from "bun:test"
+import { cruel } from "cruel"
+
+beforeEach(() => {
+  // Reset to same seed every test
+  cruel.seed(12345)
+})
+
+test("handles failures consistently", async () => {
+  const api = cruel(fetch, { fail: 0.5 })
+  
+  // This will always fail or succeed the same way
+  try {
+    await api("https://api.example.com")
+  } catch (e) {
+    expect(e).toBeDefined()
+  }
+})
+```
+
+## Utility functions
+
+Cruel provides utility functions that respect the seed:
+
+### cruel.coin()
+
+Flip a coin with configurable probability:
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.seed(12345)
+
+// 50% chance
+if (cruel.coin(0.5)) {
+  console.log("Heads")
+} else {
+  console.log("Tails")
+}
+
+// 30% chance
+if (cruel.coin(0.3)) {
+  console.log("Rare event")
+}
+```
+
+### cruel.pick()
+
+Pick random element from array:
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.seed(12345)
+
+const colors = ["red", "green", "blue"]
+const color = cruel.pick(colors)
+console.log(color) // Always same with same seed
+
+const errors = [500, 502, 503, 504]
+const status = cruel.pick(errors)
+```
+
+### cruel.between()
+
+Generate random integer in range:
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.seed(12345)
+
+// Random number between 1 and 100
+const delay = cruel.between(100, 500)
+console.log(delay) // Always same with same seed
+
+// Use in custom chaos
+const randomTimeout = cruel.between(1000, 5000)
+```
+
+### cruel.maybe()
+
+Return value or undefined based on probability:
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.seed(12345)
+
+// 50% chance of returning value
+const value = cruel.maybe("hello", 0.5)
+console.log(value) // "hello" or undefined
+
+// Use with default
+const result = cruel.maybe("data", 0.3) ?? "fallback"
+```
+
+### cruel.delay()
+
+Async delay with fixed or range:
+
+```typescript
+import { cruel } from "cruel"
+
+cruel.seed(12345)
+
+// Fixed delay
+await cruel.delay(1000)
+
+// Random delay (respects seed)
+await cruel.delay([100, 500])
+```
+
+## Reproducible tests
+
+```typescript
+import { test, beforeEach } from "bun:test"
+import { cruel } from "cruel"
+
+beforeEach(() => {
+  cruel.seed(12345)
+  cruel.resetStats()
+})
+
+test("reproduces same failure pattern", async () => {
+  const api = cruel(fetch, { fail: 0.1, delay: [100, 500] })
+  
+  const results: boolean[] = []
+  
+  for (let i = 0; i < 10; i++) {
+    try {
+      await api("https://api.example.com")
+      results.push(true)
+    } catch (e) {
+      results.push(false)
+    }
+  }
+  
+  // This exact pattern will occur every test run
+  expect(results).toEqual([
+    true, true, false, true, true,
+    true, false, true, true, true
+  ])
+})
+```
+
+## Debugging with seeds
+
+```typescript
+import { cruel } from "cruel"
+
+// Save seed that caused bug
+const bugSeed = 98765
+
+cruel.seed(bugSeed)
+
+// Now you can reliably reproduce the bug
+const api = cruel(fetch, { fail: 0.1 })
+await api("https://api.example.com") // Bug occurs here
+```
+
+## Seed from environment
+
+```typescript
+import { cruel } from "cruel"
+
+// Use seed from environment or generate random
+const seed = process.env.CHAOS_SEED 
+  ? parseInt(process.env.CHAOS_SEED) 
+  : Date.now()
+
+console.log(`Using seed: ${seed}`)
+cruel.seed(seed)
+
+// Run tests
+// If failure occurs, rerun with: CHAOS_SEED=1234567890 npm test
+```
+
+## Reset to random
+
+```typescript
+import { cruel } from "cruel"
+
+// Reset to random behavior
+cruel.reset()
+
+// Or just stop using seed
+const api = cruel(fetch, { fail: 0.1 })
+await api("https://api.example.com") // Random again
+```
+
+## Snapshot testing
+
+```typescript
+import { test } from "bun:test"
+import { cruel } from "cruel"
+
+test("chaos output matches snapshot", async () => {
+  cruel.seed(12345)
+  
+  const results = []
+  const api = cruel(async () => "data", { fail: 0.2 })
+  
+  for (let i = 0; i < 20; i++) {
+    try {
+      const data = await api()
+      results.push({ success: true, data })
+    } catch (e) {
+      results.push({ success: false })
+    }
+  }
+  
+  expect(results).toMatchSnapshot()
+})
+```
+
+<Note>
+Seeding only affects Cruel's random number generation. External randomness (like actual network conditions) is not affected.
+</Note>
+
+<Tip>
+Use seeds in CI/CD to ensure tests are reproducible across different environments.
+</Tip>

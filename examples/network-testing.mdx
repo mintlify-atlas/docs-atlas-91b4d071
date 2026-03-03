@@ -1,0 +1,322 @@
+---
+title: Network Testing
+description: Simulate network failures, latency, and bandwidth limits
+---
+
+# Network Testing
+
+Test your application's resilience to network issues with Cruel's network simulation capabilities.
+
+## Network Latency
+
+Simulate slow network connections:
+
+```typescript
+import { cruel } from 'cruel'
+
+async function fetchAPI() {
+  const response = await fetch('https://api.example.com/data')
+  return response.json()
+}
+
+// Add 500ms latency
+const slowAPI = cruel.network.latency(fetchAPI, 500)
+
+// Variable latency (realistic conditions)
+const variableLatency = cruel.network.latency(fetchAPI, [200, 2000])
+
+const data = await slowAPI()
+```
+
+## Packet Loss
+
+Simulate dropped packets and connection issues:
+
+```typescript
+import { cruel, CruelNetworkError } from 'cruel'
+
+// 10% packet loss rate
+const unstable = cruel.network.packetLoss(fetchAPI, 0.1)
+
+try {
+  const data = await unstable()
+} catch (error) {
+  if (error instanceof CruelNetworkError) {
+    console.error('Packet lost:', error.code)
+    // error.code === 'CRUEL_NETWORK_PACKET_LOSS'
+  }
+}
+```
+
+## Connection Issues
+
+<Tabs>
+  <Tab title="Disconnect">
+    Simulate random disconnections:
+
+    ```typescript
+    import { cruel } from 'cruel'
+
+    const flaky = cruel.network.disconnect(fetchAPI, 0.05)
+
+    // 5% chance of disconnect error
+    try {
+      await flaky()
+    } catch (error) {
+      // CruelNetworkError: network disconnect
+      console.error('Connection lost')
+    }
+    ```
+  </Tab>
+
+  <Tab title="DNS Failures">
+    Test DNS resolution failures:
+
+    ```typescript
+    const dnsFailure = cruel.network.dns(fetchAPI, 0.02)
+
+    try {
+      await dnsFailure()
+    } catch (error) {
+      // CruelNetworkError: network dns_failure
+      console.error('DNS failed')
+    }
+    ```
+  </Tab>
+
+  <Tab title="Offline Mode">
+    Simulate complete network outage:
+
+    ```typescript
+    const offline = cruel.network.offline(fetchAPI)
+
+    try {
+      await offline()
+    } catch (error) {
+      // Always throws: CruelNetworkError: network offline
+      console.error('No connection')
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Bandwidth Limiting
+
+Simulate slow connections and throttled bandwidth:
+
+```typescript
+import { cruel } from 'cruel'
+
+async function downloadFile() {
+  const response = await fetch('https://cdn.example.com/large-file.zip')
+  return response.text()
+}
+
+// Limit to 256 kbps (slow 3G)
+const throttled = cruel.network.bandwidth(downloadFile, 256)
+
+// Simulate dialup (56 kbps)
+const dialup = cruel.network.bandwidth(downloadFile, 56)
+
+const start = Date.now()
+const data = await throttled()
+console.log(`Downloaded in ${Date.now() - start}ms`)
+// Time increases based on response size and bandwidth limit
+```
+
+## Network Presets
+
+Use realistic network condition presets:
+
+<CodeGroup>
+```typescript slow
+// Slow network: 1-5 second delays with jitter
+const slow = cruel.network.slow(fetchAPI)
+```
+
+```typescript unstable
+// Unstable connection with drops and delays
+const unstable = cruel.network.unstable(fetchAPI)
+// 10% disconnect, 5% packet loss, 100-2000ms delay
+```
+</CodeGroup>
+
+## Testing with Bun
+
+Comprehensive network resilience tests:
+
+```typescript
+import { cruel, CruelNetworkError } from 'cruel'
+import { describe, test, beforeEach, expect } from 'bun:test'
+
+beforeEach(() => {
+  cruel.reset()
+})
+
+describe('API client network resilience', () => {
+  async function fetchData() {
+    const response = await fetch('https://api.example.com/data')
+    if (!response.ok) throw new Error('Request failed')
+    return response.json()
+  }
+
+  test('handles packet loss', async () => {
+    const lossy = cruel.network.packetLoss(fetchData, 1)
+
+    try {
+      await lossy()
+      expect(true).toBe(false)
+    } catch (error) {
+      expect(error).toBeInstanceOf(CruelNetworkError)
+      expect(error.code).toBe('CRUEL_NETWORK_PACKET_LOSS')
+    }
+  })
+
+  test('tolerates high latency', async () => {
+    const slow = cruel.network.latency(fetchData, 2000)
+
+    const start = Date.now()
+    await slow()
+    const elapsed = Date.now() - start
+
+    expect(elapsed).toBeGreaterThanOrEqual(2000)
+  })
+
+  test('retries on disconnect', async () => {
+    let attempts = 0
+    const fetchWithCount = async () => {
+      attempts++
+      const response = await fetch('https://api.example.com/data')
+      return response.json()
+    }
+
+    const flaky = cruel.network.disconnect(fetchWithCount, 0.5)
+    const resilient = cruel.retry(flaky, {
+      attempts: 3,
+      delay: 100,
+      retryIf: (error) => error instanceof CruelNetworkError
+    })
+
+    try {
+      await resilient()
+    } catch {
+      // May still fail after retries
+    }
+
+    expect(attempts).toBeGreaterThanOrEqual(1)
+  })
+
+  test('respects timeout on slow connections', async () => {
+    const verySlow = cruel.network.latency(fetchData, 5000)
+    const withTimeout = cruel.withTimeout(verySlow, { ms: 1000 })
+
+    try {
+      await withTimeout()
+      expect(true).toBe(false)
+    } catch (error) {
+      expect(error.name).toBe('CruelTimeoutError')
+    }
+  })
+
+  test('handles bandwidth limits on large responses', async () => {
+    const largeDownload = async () => {
+      return 'x'.repeat(32 * 1024) // 32KB
+    }
+
+    const throttled = cruel.network.bandwidth(largeDownload, 256)
+
+    const start = Date.now()
+    await throttled()
+    const elapsed = Date.now() - start
+
+    // Should take approximately (32KB * 8 bits) / (256 kbps) = ~1000ms
+    expect(elapsed).toBeGreaterThanOrEqual(900)
+  })
+})
+```
+
+## Mobile Network Simulation
+
+Simulate real-world mobile conditions:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Play a mobile network scenario
+cruel.scenario('mobileNetwork', {
+  chaos: {
+    delay: [500, 2000],
+    fail: 0.2,
+    timeout: 0.1
+  },
+  duration: 30000 // 30 seconds
+})
+
+cruel.play('mobileNetwork')
+
+// Your app code runs with mobile network conditions
+for (let i = 0; i < 10; i++) {
+  try {
+    const data = await fetchAPI()
+    console.log('Success:', data)
+  } catch (error) {
+    console.error('Failed:', error.message)
+  }
+  await new Promise(r => setTimeout(r, 1000))
+}
+
+cruel.stop()
+```
+
+## Combining Network Chaos
+
+Layer multiple network issues for realistic testing:
+
+```typescript
+import { cruel } from 'cruel'
+
+let fn = fetchAPI
+
+// Add multiple layers
+fn = cruel.network.latency(fn, [100, 500])
+fn = cruel.network.packetLoss(fn, 0.05)
+fn = cruel.network.disconnect(fn, 0.02)
+
+// Now has: latency, packet loss, and disconnects
+try {
+  const data = await fn()
+} catch (error) {
+  console.error('Network error:', error.message)
+}
+```
+
+## Integration with HTTP Intercepts
+
+Combine network chaos with HTTP-level chaos:
+
+```typescript
+import { cruel } from 'cruel'
+
+cruel.patchFetch()
+
+cruel.intercept('api.example.com', {
+  delay: [100, 500],      // Network latency
+  rateLimit: 0.1,         // HTTP 429 errors
+  status: [500, 502, 503] // Server errors
+})
+
+try {
+  const response = await fetch('https://api.example.com/data')
+  const data = await response.json()
+} catch (error) {
+  console.error('Failed:', error)
+}
+
+cruel.unpatchFetch()
+```
+
+## Next Steps
+
+- Learn about [HTTP-specific testing](/examples/api-resilience)
+- Explore [Stream testing](/examples/ai-sdk-streaming)
+- Master [Circuit breakers](/examples/combining-patterns)

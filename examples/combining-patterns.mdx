@@ -1,0 +1,521 @@
+---
+title: Combining Patterns
+description: Combine multiple resilience patterns for robust applications
+---
+
+# Combining Patterns
+
+Learn how to compose multiple chaos and resilience patterns for production-ready applications.
+
+## Basic Composition
+
+Combine multiple wrappers:
+
+```typescript
+import { cruel } from 'cruel'
+
+async function fetchAPI() {
+  const response = await fetch('https://api.example.com/data')
+  return response.json()
+}
+
+// Layer multiple patterns
+let resilient = fetchAPI
+resilient = cruel.network.latency(resilient, [100, 500])
+resilient = cruel.http.rateLimit(resilient, 0.1)
+resilient = cruel.fail(resilient, 0.05)
+
+// Now has: latency + rate limits + random failures
+const data = await resilient()
+```
+
+## Using compose()
+
+Use the built-in compose function:
+
+```typescript
+import { cruel } from 'cruel'
+
+const resilient = cruel.compose(fetchAPI, {
+  // Chaos
+  fail: 0.05,
+  delay: [100, 500],
+  timeout: 0.02,
+  
+  // Resilience
+  retry: {
+    attempts: 3,
+    delay: 1000,
+    backoff: 'exponential'
+  },
+  circuitBreaker: {
+    threshold: 5,
+    timeout: 30000
+  },
+  fallback: { cached: true, data: [] },
+  timeoutMs: 5000
+})
+
+const data = await resilient()
+```
+
+## Retry + Circuit Breaker
+
+Combine retries with circuit breakers:
+
+<Steps>
+
+### Create Base Function
+
+```typescript
+import { cruel } from 'cruel'
+
+async function unstableAPI() {
+  const response = await fetch('https://api.example.com/data')
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.json()
+}
+```
+
+### Add Retries
+
+```typescript
+const withRetry = cruel.retry(unstableAPI, {
+  attempts: 3,
+  delay: 1000,
+  backoff: 'exponential',
+  maxDelay: 10000,
+  onRetry: (attempt, error) => {
+    console.log(`Retry attempt ${attempt}:`, error.message)
+  }
+})
+```
+
+### Add Circuit Breaker
+
+```typescript
+const withBreaker = cruel.circuitBreaker(withRetry, {
+  threshold: 5,
+  timeout: 30000,
+  onOpen: () => console.log('Circuit opened'),
+  onClose: () => console.log('Circuit closed'),
+  onHalfOpen: () => console.log('Circuit half-open')
+})
+```
+
+### Add Fallback
+
+```typescript
+const complete = cruel.fallback(withBreaker, {
+  fallback: { cached: true, data: [] },
+  onFallback: (error) => {
+    console.log('Using fallback:', error.message)
+  }
+})
+
+const data = await complete()
+```
+
+</Steps>
+
+## Rate Limiting + Bulkhead
+
+Prevent resource exhaustion:
+
+```typescript
+import { cruel } from 'cruel'
+
+async function expensiveOperation() {
+  // Expensive API call
+  const response = await fetch('https://api.example.com/heavy')
+  return response.json()
+}
+
+// Limit concurrent executions
+const bulkheaded = cruel.bulkhead(expensiveOperation, {
+  maxConcurrent: 3,
+  maxQueue: 10,
+  onReject: () => console.log('Queue full')
+})
+
+// Add rate limiting
+const rateLimited = cruel.rateLimiter(bulkheaded, {
+  requests: 10,
+  interval: 60000, // 10 requests per minute
+  onLimit: () => console.log('Rate limited')
+})
+
+// Now protected by both patterns
+const results = await Promise.all(
+  Array(20).fill(0).map(() => rateLimited())
+)
+```
+
+## Timeout + Hedge
+
+Race multiple attempts:
+
+```typescript
+import { cruel } from 'cruel'
+
+async function slowAPI() {
+  const response = await fetch('https://slow-api.example.com/data')
+  return response.json()
+}
+
+// Add timeout
+const withTimeout = cruel.withTimeout(slowAPI, {
+  ms: 5000,
+  onTimeout: () => console.log('Request timeout')
+})
+
+// Hedge: launch parallel requests
+const hedged = cruel.hedge(withTimeout, {
+  count: 3,     // 3 parallel attempts
+  delay: 1000   // Start new attempt every 1s
+})
+
+try {
+  const data = await hedged()
+  console.log('Got result from first successful attempt')
+} catch (error) {
+  console.error('All attempts failed')
+}
+```
+
+## Cache + Retry
+
+Reduce load with caching:
+
+```typescript
+import { cruel } from 'cruel'
+
+// Add retry logic
+const withRetry = cruel.retry(fetchAPI, {
+  attempts: 3,
+  delay: 1000
+})
+
+// Add caching
+const cached = cruel.cache(withRetry, {
+  ttl: 60000, // 1 minute
+  key: (...args) => JSON.stringify(args),
+  onHit: (key) => console.log('Cache hit:', key),
+  onMiss: (key) => console.log('Cache miss:', key)
+})
+
+// First call: cache miss, may retry
+await cached('user-123')
+
+// Second call: cache hit, no API call
+await cached('user-123')
+```
+
+## Complete Resilience Stack
+
+Full production pattern:
+
+```typescript
+import { cruel } from 'cruel'
+
+class ResilientAPIClient {
+  private stats = { calls: 0, failures: 0, cacheHits: 0 }
+
+  private buildResilientFn(fn: Function) {
+    // 1. Cache layer (outermost)
+    let resilient = cruel.cache(fn, {
+      ttl: 60000,
+      onHit: () => this.stats.cacheHits++
+    })
+
+    // 2. Rate limiting
+    resilient = cruel.rateLimiter(resilient, {
+      requests: 100,
+      interval: 60000
+    })
+
+    // 3. Bulkhead
+    resilient = cruel.bulkhead(resilient, {
+      maxConcurrent: 10,
+      maxQueue: 50
+    })
+
+    // 4. Circuit breaker
+    resilient = cruel.circuitBreaker(resilient, {
+      threshold: 5,
+      timeout: 30000,
+      onOpen: () => console.log('Circuit opened')
+    })
+
+    // 5. Retry logic
+    resilient = cruel.retry(resilient, {
+      attempts: 3,
+      delay: 1000,
+      backoff: 'exponential',
+      retryIf: (error) => {
+        // Only retry on specific errors
+        return error.message.includes('timeout') ||
+               error.message.includes('503')
+      }
+    })
+
+    // 6. Timeout
+    resilient = cruel.withTimeout(resilient, {
+      ms: 10000
+    })
+
+    // 7. Fallback (innermost)
+    resilient = cruel.fallback(resilient, {
+      fallback: { error: true, data: null },
+      onFallback: (error) => {
+        console.log('Fallback triggered:', error.message)
+        this.stats.failures++
+      }
+    })
+
+    return resilient
+  }
+
+  async fetch(endpoint: string) {
+    this.stats.calls++
+
+    const fn = async () => {
+      const response = await fetch(`https://api.example.com${endpoint}`)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json()
+    }
+
+    const resilient = this.buildResilientFn(fn)
+    return await resilient()
+  }
+
+  getStats() {
+    return {
+      ...this.stats,
+      cacheHitRate: this.stats.calls > 0
+        ? ((this.stats.cacheHits / this.stats.calls) * 100).toFixed(1) + '%'
+        : '0%'
+    }
+  }
+}
+
+const client = new ResilientAPIClient()
+
+for (let i = 0; i < 100; i++) {
+  const data = await client.fetch('/data')
+  console.log('Response:', data)
+}
+
+console.log('Stats:', client.getStats())
+```
+
+## AI SDK Resilience Stack
+
+Combine patterns for AI applications:
+
+```typescript
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel, presets } from 'cruel/ai-sdk'
+import { cruel } from 'cruel'
+
+class ResilientAIClient {
+  private model: any
+  private breaker: any
+
+  constructor() {
+    // Base model with chaos (dev only)
+    const baseModel = cruelModel(openai('gpt-4o'), {
+      ...(process.env.NODE_ENV === 'development' && presets.realistic)
+    })
+
+    // Wrap in circuit breaker
+    this.breaker = cruel.circuitBreaker(
+      async (prompt: string) => {
+        return await generateText({ model: baseModel, prompt })
+      },
+      {
+        threshold: 3,
+        timeout: 60000
+      }
+    )
+
+    // Add retry
+    this.model = cruel.retry(this.breaker, {
+      attempts: 3,
+      delay: 2000,
+      backoff: 'exponential',
+      retryIf: (error) => {
+        return error.message.includes('429') ||
+               error.message.includes('529')
+      }
+    })
+  }
+
+  async generate(prompt: string, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await this.model(prompt)
+        return result.text
+      } catch (error) {
+        console.log(`Attempt ${attempt + 1} failed:`, error.message)
+        
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000))
+        } else {
+          // Final fallback
+          return 'Sorry, the AI service is currently unavailable.'
+        }
+      }
+    }
+  }
+
+  getBreakerState() {
+    return this.breaker.getState()
+  }
+}
+
+const ai = new ResilientAIClient()
+const response = await ai.generate('Explain resilience patterns')
+console.log(response)
+```
+
+## Testing Complete Stacks
+
+Test combined patterns:
+
+```typescript
+import { describe, test, expect, beforeEach } from 'bun:test'
+import { cruel } from 'cruel'
+
+beforeEach(() => {
+  cruel.reset()
+})
+
+describe('Combined resilience patterns', () => {
+  test('cache + retry + circuit breaker', async () => {
+    let calls = 0
+    
+    const fn = async () => {
+      calls++
+      if (calls < 3) throw new Error('fail')
+      return 'success'
+    }
+
+    // Build stack
+    const retry = cruel.retry(fn, { attempts: 3, delay: 10 })
+    const breaker = cruel.circuitBreaker(retry, {
+      threshold: 5,
+      timeout: 1000
+    })
+    const cached = cruel.cache(breaker, { ttl: 1000 })
+
+    // First call: retries and succeeds
+    const result1 = await cached()
+    expect(result1).toBe('success')
+    expect(calls).toBe(3)
+
+    // Second call: cache hit
+    const result2 = await cached()
+    expect(result2).toBe('success')
+    expect(calls).toBe(3) // No additional calls
+  })
+
+  test('bulkhead + rate limiter', async () => {
+    const fn = async () => {
+      await new Promise(r => setTimeout(r, 100))
+      return 'ok'
+    }
+
+    const bulkhead = cruel.bulkhead(fn, {
+      maxConcurrent: 2,
+      maxQueue: 5
+    })
+
+    const limited = cruel.rateLimiter(bulkhead, {
+      requests: 5,
+      interval: 1000
+    })
+
+    // Launch 10 concurrent requests
+    const promises = Array(10).fill(0).map(() => limited())
+    
+    const results = await Promise.allSettled(promises)
+    const successful = results.filter(r => r.status === 'fulfilled')
+    const failed = results.filter(r => r.status === 'rejected')
+
+    // Some should succeed, some should be rejected by rate limiter or bulkhead
+    expect(successful.length).toBeGreaterThan(0)
+    expect(failed.length).toBeGreaterThan(0)
+  })
+
+  test('hedge + timeout + fallback', async () => {
+    let attempts = 0
+
+    const slow = async () => {
+      attempts++
+      await new Promise(r => setTimeout(r, 2000))
+      return 'slow-result'
+    }
+
+    const withTimeout = cruel.withTimeout(slow, { ms: 500 })
+    const hedged = cruel.hedge(withTimeout, { count: 3, delay: 100 })
+    const withFallback = cruel.fallback(hedged, {
+      fallback: 'fallback-result'
+    })
+
+    const result = await withFallback()
+    expect(result).toBe('fallback-result')
+    expect(attempts).toBeGreaterThan(1) // Multiple hedge attempts
+  })
+})
+```
+
+## Pattern Selection Guide
+
+<CodeGroup>
+```typescript high-availability
+// For critical, high-availability services
+const fn = cruel.compose(fetchAPI, {
+  retry: { attempts: 5, delay: 1000, backoff: 'exponential' },
+  circuitBreaker: { threshold: 10, timeout: 60000 },
+  fallback: { cached: true },
+  cache: { ttl: 300000 }
+})
+```
+
+```typescript rate-limited-api
+// For APIs with rate limits
+const fn = cruel.compose(fetchAPI, {
+  rateLimiter: { requests: 100, interval: 60000 },
+  retry: { attempts: 3, delay: 2000 },
+  cache: { ttl: 60000 }
+})
+```
+
+```typescript expensive-operations
+// For expensive/slow operations
+const fn = cruel.compose(expensiveOp, {
+  bulkhead: { maxConcurrent: 3, maxQueue: 10 },
+  cache: { ttl: 600000 },
+  timeoutMs: 30000
+})
+```
+
+```typescript untrusted-service
+// For untrusted/unreliable services
+const fn = cruel.compose(unreliableAPI, {
+  timeoutMs: 5000,
+  retry: { attempts: 3 },
+  circuitBreaker: { threshold: 3, timeout: 30000 },
+  hedge: { count: 2, delay: 1000 },
+  fallback: { error: true }
+})
+```
+</CodeGroup>
+
+## Next Steps
+
+- Learn about [Testing Integration](/examples/testing-integration)
+- Explore [Production Readiness](/examples/production-readiness)
+- Master [Network Testing](/examples/network-testing)

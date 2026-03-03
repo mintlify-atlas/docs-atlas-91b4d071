@@ -1,0 +1,244 @@
+---
+title: "Network Chaos API"
+description: "Network-level chaos testing methods for simulating network failures and conditions"
+---
+
+## cruel.network.latency()
+
+Adds network latency to a function.
+
+```typescript
+function latency<T extends AnyFn>(fn: T, ms: number | [number, number]): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="ms" type="number | [number, number]" required>
+  Latency in milliseconds, or range [min, max] for random latency
+</ParamField>
+
+**Returns:** `T` - Function with network latency
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowNetwork = cruel.network.latency(async () => {
+  return fetch('/api/data')
+}, [100, 500]) // 100-500ms latency
+```
+
+---
+
+## cruel.network.packetLoss()
+
+Simulates packet loss by throwing network errors.
+
+```typescript
+function packetLoss<T extends AnyFn>(fn: T, rate = 0.1): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.1">
+  Packet loss rate (0-1). Default is 0.1 (10%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelNetworkError("packet_loss")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const unreliableConnection = cruel.network.packetLoss(async () => {
+  return sendData(payload)
+}, 0.05) // 5% packet loss
+```
+
+---
+
+## cruel.network.disconnect()
+
+Simulates network disconnection.
+
+```typescript
+function disconnect<T extends AnyFn>(fn: T, rate = 0.05): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.05">
+  Disconnection rate (0-1). Default is 0.05 (5%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelNetworkError("disconnect")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const flakyCon nection = cruel.network.disconnect(async () => {
+  return websocket.send(message)
+}, 0.02) // 2% disconnect rate
+```
+
+---
+
+## cruel.network.dns()
+
+Simulates DNS lookup failures.
+
+```typescript
+function dns<T extends AnyFn>(fn: T, rate = 0.02): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+<ParamField path="rate" type="number" default="0.02">
+  DNS failure rate (0-1). Default is 0.02 (2%)
+</ParamField>
+
+**Returns:** `T` - Function that throws `CruelNetworkError("dns_failure")` at the specified rate
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const dnsProblems = cruel.network.dns(async (hostname: string) => {
+  return resolve(hostname)
+})
+```
+
+---
+
+## cruel.network.bandwidth()
+
+Simulates bandwidth throttling by delaying based on response size.
+
+```typescript
+function bandwidth<T extends AsyncFn<string>>(fn: T, kbps = 256): T
+```
+
+<ParamField path="fn" type="T extends AsyncFn<string>" required>
+  The function to wrap (must return a string)
+</ParamField>
+
+<ParamField path="kbps" type="number" default="256">
+  Bandwidth limit in kilobits per second. Default is 256 kbps
+</ParamField>
+
+**Returns:** `T` - Function with bandwidth throttling
+
+**Note:** Delay is calculated based on response size: `(bytes * 8 * 1000) / (kbps * 1024)` ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowConnection = cruel.network.bandwidth(async () => {
+  return await fetch('/large-file').then(r => r.text())
+}, 128) // 128 kbps - slow mobile connection
+```
+
+---
+
+## cruel.network.slow()
+
+Simulates a slow network with high latency and jitter.
+
+```typescript
+function slow<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with slow network characteristics
+
+**Behavior:** Applies chaos with:
+- `delay: [1000, 5000]`
+- `jitter: 2000`
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const slowApi = cruel.network.slow(async () => {
+  return fetch('/api/endpoint')
+})
+```
+
+---
+
+## cruel.network.unstable()
+
+Simulates an unstable network with disconnections, packet loss, and variable latency.
+
+```typescript
+function unstable<T extends AnyFn>(fn: T): T
+```
+
+<ParamField path="fn" type="T extends AnyFn" required>
+  The function to wrap
+</ParamField>
+
+**Returns:** `T` - Function with unstable network behavior
+
+**Behavior:**
+- 10% chance of disconnect
+- 5% chance of packet loss
+- Random delay between 100-2000ms
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const unstableNetwork = cruel.network.unstable(async () => {
+  return fetchData()
+})
+```
+
+---
+
+## cruel.network.offline()
+
+Simulates complete network failure (always throws).
+
+```typescript
+function offline<T extends AnyFn>(_fn: T): T
+```
+
+<ParamField path="_fn" type="T extends AnyFn" required>
+  The function to wrap (not executed)
+</ParamField>
+
+**Returns:** `T` - Function that always throws `CruelNetworkError("offline")`
+
+### Example
+
+```typescript
+import { cruel } from '@cruel/cruel'
+
+const offlineMode = cruel.network.offline(async () => {
+  return fetch('/api/data')
+})
+
+// Always throws network offline error
+await offlineMode() // throws CruelNetworkError
+```

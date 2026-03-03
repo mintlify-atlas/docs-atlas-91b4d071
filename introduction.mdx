@@ -1,0 +1,70 @@
+---
+title: Introduction
+description: Chaos engineering library for testing resilience with zero dependencies
+---
+
+Cruel is a chaos engineering library that helps you build resilient applications by injecting failures, latency, and timeouts into any function. Test how your code handles the unexpected before your users do.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with Cruel in under 5 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Cruel with your package manager
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/chaos-injection">
+    Learn the fundamentals of chaos testing
+  </Card>
+  <Card title="API reference" icon="code" href="/api/cruel">
+    Explore all available chaos functions
+  </Card>
+</CardGroup>
+
+## What is Cruel?
+
+Cruel wraps your functions and injects controlled chaos to simulate real-world failures. Inject failures, add latency, trigger timeouts, or combine multiple failure modes to test your application's resilience.
+
+```typescript
+import { cruel } from "cruel"
+
+const api = cruel(fetch, {
+  fail: 0.1,          // 10% failure rate
+  delay: [100, 500],  // random delay between 100-500ms
+  timeout: 0.05,      // 5% timeout rate
+})
+
+const res = await api("https://api.example.com")
+```
+
+## Key features
+
+- **Zero dependencies** - No external packages required, works everywhere
+- **TypeScript native** - Full type safety out of the box
+- **Works everywhere** - Node.js, Bun, Deno, browsers, edge runtimes
+- **Chaos injection** - Failures, latency, timeouts, and corruption
+- **Network simulation** - Packet loss, disconnects, DNS failures, bandwidth throttling
+- **HTTP chaos** - Status codes, rate limits, slow responses, malformed bodies
+- **Stream manipulation** - Cut streams, pause, corrupt, truncate, reorder chunks
+- **AI SDK integration** - Built-in support for AI SDK v6 with specialized chaos
+- **Resilience patterns** - Circuit breakers, retries, bulkheads, timeouts, fallbacks
+- **Fetch interception** - Patch global fetch to inject chaos automatically
+- **Presets and profiles** - Pre-configured chaos levels from light to extreme
+- **Scenarios** - Define and replay complex failure scenarios
+- **Deterministic mode** - Reproducible chaos with seeded random number generation
+
+## Why Cruel?
+
+Most applications are built assuming perfect conditions. APIs always respond, networks never fail, and services are always available. Cruel helps you test the reality where things break.
+
+**Zero dependencies**  
+Cruel has no external dependencies. Install it and start testing immediately without worrying about version conflicts or supply chain security.
+
+**TypeScript native**  
+Built from the ground up with TypeScript. Get full type safety, autocomplete, and inline documentation in your editor.
+
+**Works everywhere**  
+Runs in any JavaScript environment: Node.js, Bun, Deno, browsers, Cloudflare Workers, Vercel Edge Functions, and more.
+
+## Next steps
+
+Ready to start testing? Follow the [quickstart guide](/quickstart) to inject your first chaos in under 5 minutes.

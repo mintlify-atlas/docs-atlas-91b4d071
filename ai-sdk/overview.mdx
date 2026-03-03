@@ -1,0 +1,256 @@
+---
+title: AI SDK Integration
+description: Inject chaos into AI SDK v6 applications
+---
+
+Cruel provides comprehensive chaos testing support for [Vercel AI SDK v6](https://sdk.vercel.ai/docs), enabling you to simulate real-world AI failures in your applications.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install cruel
+```
+
+```bash pnpm
+pnpm add cruel
+```
+
+```bash yarn
+yarn add cruel
+```
+</CodeGroup>
+
+## Quick Start
+
+<CodeGroup>
+```typescript cruelModel
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.2,
+  overloaded: 0.1,
+  delay: [100, 500],
+})
+
+const result = await generateText({
+  model,
+  prompt: 'Explain quantum computing',
+})
+```
+
+```typescript cruelProvider
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelProvider } from 'cruel/ai-sdk'
+
+const provider = cruelProvider(openai, {
+  rateLimit: 0.15,
+  streamCut: 0.05,
+})
+
+const result = await generateText({
+  model: provider('gpt-4'),
+  prompt: 'Explain quantum computing',
+})
+```
+
+```typescript cruelMiddleware
+import { openai } from '@ai-sdk/openai'
+import { generateText } from 'ai'
+import { cruelMiddleware } from 'cruel/ai-sdk'
+
+const result = await generateText({
+  model: openai('gpt-4', {
+    experimental_middleware: cruelMiddleware({
+      rateLimit: 0.1,
+      delay: [50, 200],
+    }),
+  }),
+  prompt: 'Explain quantum computing',
+})
+```
+</CodeGroup>
+
+## Key Features
+
+### Comprehensive Model Support
+
+Cruel supports all AI SDK v6 model types:
+
+- **Language Models** - `cruelModel()` for text generation
+- **Embedding Models** - `cruelEmbeddingModel()` for embeddings
+- **Image Models** - `cruelImageModel()` for image generation
+- **Speech Models** - `cruelSpeechModel()` for text-to-speech
+- **Transcription Models** - `cruelTranscriptionModel()` for speech-to-text
+- **Video Models** - `cruelVideoModel()` for video generation
+
+### Realistic AI Failures
+
+Simulate production-grade AI failures:
+
+<CardGroup cols={2}>
+  <Card title="API Errors" icon="triangle-exclamation">
+    Rate limits, quota exceeded, invalid API keys, model unavailability
+  </Card>
+  <Card title="Stream Issues" icon="water">
+    Stream cuts, slow tokens, corrupt chunks, partial responses
+  </Card>
+  <Card title="Content Filters" icon="shield">
+    Content moderation, context length errors, empty responses
+  </Card>
+  <Card title="Tool Failures" icon="wrench">
+    Tool execution failures, tool timeouts, delayed responses
+  </Card>
+</CardGroup>
+
+### Built-in Presets
+
+Five ready-to-use chaos presets:
+
+```typescript
+import { cruelModel, presets } from 'cruel/ai-sdk'
+
+// Light chaos for development
+const dev = cruelModel(model, presets.realistic)
+
+// Medium chaos for staging
+const staging = cruelModel(model, presets.unstable)
+
+// Heavy chaos for stress testing
+const stress = cruelModel(model, presets.nightmare)
+```
+
+See [Presets](/ai-sdk/presets) for full details.
+
+## Integration Methods
+
+Cruel offers three ways to integrate chaos into your AI SDK applications:
+
+<Steps>
+  <Step title="cruelModel - Direct Model Wrapping">
+    Wrap individual model instances for fine-grained control:
+    
+    ```typescript
+    const model = cruelModel(openai('gpt-4'), { rateLimit: 0.1 })
+    ```
+    
+    Best for: Testing specific models, per-model configuration
+  </Step>
+  
+  <Step title="cruelProvider - Provider-Level Chaos">
+    Apply chaos to all models from a provider:
+    
+    ```typescript
+    const provider = cruelProvider(openai, { delay: [100, 300] })
+    const gpt4 = provider('gpt-4')
+    const gpt35 = provider('gpt-3.5-turbo')
+    ```
+    
+    Best for: Consistent chaos across multiple models, provider-wide testing
+  </Step>
+  
+  <Step title="cruelMiddleware - AI SDK Middleware">
+    Use AI SDK's middleware system:
+    
+    ```typescript
+    const model = openai('gpt-4', {
+      experimental_middleware: cruelMiddleware({ streamCut: 0.05 })
+    })
+    ```
+    
+    Best for: Integrating with existing middleware, composable chaos
+  </Step>
+</Steps>
+
+## Chaos Events
+
+Monitor chaos injections in real-time:
+
+```typescript
+const model = cruelModel(openai('gpt-4'), {
+  rateLimit: 0.2,
+  streamCut: 0.1,
+  onChaos: (event) => {
+    console.log(`Chaos injected: ${event.type}`, event)
+  },
+})
+```
+
+Event types include:
+- `rateLimit` - Rate limit exceeded
+- `overloaded` - Model overloaded  
+- `streamCut` - Stream interrupted
+- `delay` - Response delayed
+- `contentFilter` - Content filtered
+- `toolFailure` - Tool execution failed
+
+See the [ChaosEvent type](https://github.com/vercel/ai/tree/main/packages/cruel/src/types.ts#L581-L599) for all events.
+
+## Error Handling
+
+Cruel throws AI SDK-compatible errors that your retry logic can handle:
+
+```typescript
+import { CruelAPIError } from 'cruel/ai-sdk'
+
+try {
+  const result = await generateText({
+    model: cruelModel(openai('gpt-4'), { rateLimit: 0.3 }),
+    prompt: 'Hello',
+    maxRetries: 3, // AI SDK will retry on retryable errors
+  })
+} catch (error) {
+  if (error instanceof CruelAPIError) {
+    console.log('Status:', error.statusCode)
+    console.log('Retryable:', error.isRetryable)
+    console.log('Message:', error.message)
+  }
+}
+```
+
+## Streaming Support
+
+Full support for AI SDK streaming:
+
+```typescript
+import { streamText } from 'ai'
+import { cruelModel } from 'cruel/ai-sdk'
+
+const model = cruelModel(openai('gpt-4'), {
+  slowTokens: [20, 80],    // Delay between tokens
+  streamCut: 0.1,          // 10% chance of stream interruption
+  corruptChunks: 0.05,     // 5% chance of corrupt chunks
+})
+
+const result = streamText({
+  model,
+  prompt: 'Write a story',
+})
+
+for await (const chunk of result.textStream) {
+  process.stdout.write(chunk)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Wrapping" icon="box" href="/ai-sdk/models">
+    Learn about cruelModel and model-specific options
+  </Card>
+  <Card title="Provider Wrapping" icon="layer-group" href="/ai-sdk/providers">
+    Explore provider-level chaos injection
+  </Card>
+  <Card title="Middleware" icon="filter" href="/ai-sdk/middleware">
+    Use AI SDK middleware for chaos
+  </Card>
+  <Card title="Tool Chaos" icon="wrench" href="/ai-sdk/tools">
+    Inject failures into tool execution
+  </Card>
+  <Card title="Presets" icon="sliders" href="/ai-sdk/presets">
+    Use built-in chaos presets
+  </Card>
+</CardGroup>
