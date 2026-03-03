@@ -172,7 +172,8 @@ describe('Database Client', () => {
 Use Cruel's custom matchers:
 
 ```typescript
-import { cruel, setupMatchers } from 'cruel'
+import { setupMatchers } from 'cruel/matchers'
+import { cruel } from 'cruel'
 import { test, beforeAll, expect } from 'bun:test'
 
 beforeAll(() => {
@@ -184,17 +185,17 @@ test('custom matchers', async () => {
   const failing = cruel.fail(fn, 1)
 
   // Check if function throws Cruel errors
-  await expect(failing()).rejects.toBeCruel()
+  await expect(failing()).toEventuallyThrow()
   
   // Check for specific error types
   const timeout = cruel.timeout(fn, 1)
-  await expect(timeout()).rejects.toBeCruelTimeout()
+  await expect(timeout()).toEventuallyThrow(CruelTimeoutError)
 
   const networkError = cruel.network.disconnect(fn, 1)
-  await expect(networkError()).rejects.toBeCruelNetworkError()
+  await expect(networkError()).toEventuallyThrow(CruelNetworkError)
 
   const httpError = cruel.http.status(fn, 500, 1)
-  await expect(httpError()).rejects.toBeCruelHttpError()
+  await expect(httpError()).toEventuallyThrow(CruelHttpError)
 })
 ```
 

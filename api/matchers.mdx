@@ -1,0 +1,304 @@
+---
+title: Test matchers
+description: Custom test matchers for Cruel errors
+---
+
+Cruel provides custom test matchers for Vitest, Jest, and Bun to make testing chaos behaviors easier.
+
+## Setup
+
+```typescript
+import { setupMatchers } from 'cruel/matchers'
+import { beforeAll } from 'bun:test'
+
+beforeAll(() => {
+  setupMatchers()
+})
+```
+
+## Matchers
+
+### toThrowCruelError
+
+Check if function throws any Cruel error:
+
+```typescript
+import { cruel, matchers } from 'cruel/matchers'
+import { expect, test } from 'bun:test'
+
+test('throws cruel error', () => {
+  const fn = () => {
+    throw new CruelError('test')
+  }
+  
+  expect(fn).toThrowCruelError()
+})
+```
+
+### toThrowTimeout
+
+Check if function throws a timeout error:
+
+```typescript
+test('throws timeout', async () => {
+  const fn = cruel.timeout(async () => 'data', 1)
+  
+  await expect(fn()).toEventuallyThrow(CruelTimeoutError)
+})
+```
+
+<ParamField path="received" type="() => unknown" required>
+  Function to test
+</ParamField>
+
+**Returns:** `MatcherResult`
+
+### toThrowNetworkError
+
+Check if function throws a network error, optionally with specific type:
+
+```typescript
+test('throws network error', () => {
+  const fn = () => {
+    throw new CruelNetworkError('disconnect')
+  }
+  
+  expect(fn).toThrowNetworkError()
+  expect(fn).toThrowNetworkError('disconnect')
+})
+```
+
+<ParamField path="received" type="() => unknown" required>
+  Function to test
+</ParamField>
+
+<ParamField path="type" type="string">
+  Expected network error type (disconnect, packet_loss, dns_failure, offline)
+</ParamField>
+
+**Returns:** `MatcherResult`
+
+### toThrowHttpError
+
+Check if function throws an HTTP error, optionally with specific status:
+
+```typescript
+test('throws http error', () => {
+  const fn = () => {
+    throw new CruelHttpError(500)
+  }
+  
+  expect(fn).toThrowHttpError()
+  expect(fn).toThrowHttpError(500)
+})
+```
+
+<ParamField path="received" type="() => unknown" required>
+  Function to test
+</ParamField>
+
+<ParamField path="status" type="number">
+  Expected HTTP status code
+</ParamField>
+
+**Returns:** `MatcherResult`
+
+### toThrowRateLimit
+
+Check if function throws a rate limit error:
+
+```typescript
+test('throws rate limit', () => {
+  const fn = () => {
+    throw new CruelRateLimitError(60)
+  }
+  
+  expect(fn).toThrowRateLimit()
+})
+```
+
+<ParamField path="received" type="() => unknown" required>
+  Function to test
+</ParamField>
+
+**Returns:** `MatcherResult`
+
+### toThrowAIError
+
+Check if function throws an AI error, optionally with specific type:
+
+```typescript
+test('throws AI error', () => {
+  const fn = () => {
+    throw new CruelAIError('rate_limit')
+  }
+  
+  expect(fn).toThrowAIError()
+  expect(fn).toThrowAIError('rate_limit')
+})
+```
+
+<ParamField path="received" type="() => unknown" required>
+  Function to test
+</ParamField>
+
+<ParamField path="type" type="string">
+  Expected AI error type (rate_limit, overloaded, context_length, content_filter, model_unavailable, stream_cut)
+</ParamField>
+
+**Returns:** `MatcherResult`
+
+### toEventuallyThrow
+
+Check if async function throws an error:
+
+```typescript
+test('eventually throws', async () => {
+  const fn = async () => {
+    throw new Error('failed')
+  }
+  
+  await expect(fn()).toEventuallyThrow()
+  await expect(fn()).toEventuallyThrow(Error)
+})
+```
+
+<ParamField path="received" type="() => Promise<unknown>" required>
+  Async function to test
+</ParamField>
+
+<ParamField path="errorType" type="new () => Error">
+  Expected error class
+</ParamField>
+
+**Returns:** `Promise<MatcherResult>`
+
+### toCompleteWithin
+
+Check if async function completes within time limit:
+
+```typescript
+test('completes quickly', async () => {
+  const fn = async () => {
+    await new Promise(r => setTimeout(r, 100))
+    return 'done'
+  }
+  
+  await expect(fn()).toCompleteWithin(200)
+})
+```
+
+<ParamField path="received" type="() => Promise<unknown>" required>
+  Async function to test
+</ParamField>
+
+<ParamField path="ms" type="number" required>
+  Maximum allowed duration in milliseconds
+</ParamField>
+
+**Returns:** `Promise<MatcherResult>`
+
+### toTakeLongerThan
+
+Check if async function takes at least specified time:
+
+```typescript
+test('takes time', async () => {
+  const fn = cruel.slow(async () => 'data', 500)
+  
+  await expect(fn()).toTakeLongerThan(400)
+})
+```
+
+<ParamField path="received" type="() => Promise<unknown>" required>
+  Async function to test
+</ParamField>
+
+<ParamField path="ms" type="number" required>
+  Minimum expected duration in milliseconds
+</ParamField>
+
+**Returns:** `Promise<MatcherResult>`
+
+## Usage with testing frameworks
+
+### Bun
+
+```typescript
+import { setupMatchers } from 'cruel/matchers'
+import { beforeAll, test, expect } from 'bun:test'
+
+beforeAll(() => {
+  setupMatchers()
+})
+
+test('uses matchers', async () => {
+  const fn = cruel.fail(async () => 'data', 1)
+  await expect(fn()).toEventuallyThrow()
+})
+```
+
+### Vitest
+
+```typescript
+import { setupMatchers } from 'cruel/matchers'
+import { beforeAll, test, expect } from 'vitest'
+
+beforeAll(() => {
+  setupMatchers()
+})
+
+test('uses matchers', async () => {
+  const fn = cruel.fail(async () => 'data', 1)
+  await expect(fn()).toEventuallyThrow()
+})
+```
+
+### Jest
+
+```typescript
+import { setupMatchers } from 'cruel/matchers'
+import { beforeAll, test, expect } from '@jest/globals'
+
+beforeAll(() => {
+  setupMatchers()
+})
+
+test('uses matchers', async () => {
+  const fn = cruel.fail(async () => 'data', 1)
+  await expect(fn()).resolves.toEventuallyThrow()
+})
+```
+
+## Type definitions
+
+```typescript
+interface MatcherResult {
+  pass: boolean
+  message: () => string
+}
+
+declare global {
+  namespace jest {
+    interface Matchers<R> {
+      toThrowCruelError(): R
+      toThrowTimeout(): R
+      toThrowNetworkError(type?: string): R
+      toThrowHttpError(status?: number): R
+      toThrowRateLimit(): R
+      toThrowAIError(type?: string): R
+      toEventuallyThrow(errorType?: new () => Error): Promise<R>
+      toCompleteWithin(ms: number): Promise<R>
+      toTakeLongerThan(ms: number): Promise<R>
+    }
+  }
+}
+```
+
+<Note>
+Matchers are automatically extended to `expect` when you call `setupMatchers()`.
+</Note>
+
+<Tip>
+Call `setupMatchers()` once in your test setup (beforeAll or setupFiles) to enable all matchers globally.
+</Tip>
