@@ -1,0 +1,217 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Cruel",
+  "projectDescription": "Chaos testing library for injecting failures, latency, and timeouts into any async function",
+  "theme": "aspen",
+  "primaryColor": "#dc2626",
+  "lightColor": "#fca5a5",
+  "darkColor": "#991b1b",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/chaos-injection",
+              "concepts/presets",
+              "concepts/scenarios"
+            ]
+          },
+          {
+            "group": "Chaos Types",
+            "pages": [
+              "chaos/basic",
+              "chaos/network",
+              "chaos/http",
+              "chaos/stream",
+              "chaos/ai"
+            ]
+          },
+          {
+            "group": "Resilience Patterns",
+            "pages": [
+              "resilience/circuit-breaker",
+              "resilience/retry",
+              "resilience/bulkhead",
+              "resilience/timeout",
+              "resilience/fallback",
+              "resilience/hedge",
+              "resilience/rate-limiter",
+              "resilience/cache"
+            ]
+          },
+          {
+            "group": "AI SDK Integration",
+            "pages": [
+              "ai-sdk/overview",
+              "ai-sdk/models",
+              "ai-sdk/providers",
+              "ai-sdk/middleware",
+              "ai-sdk/tools",
+              "ai-sdk/presets"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/global-mode",
+              "advanced/fetch-interception",
+              "advanced/profiles",
+              "advanced/statistics",
+              "advanced/events",
+              "advanced/deterministic"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "cli/overview",
+              "cli/test",
+              "cli/benchmark",
+              "cli/scenarios"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/cruel",
+              "api/create-cruel",
+              "api/wrap"
+            ]
+          },
+          {
+            "group": "Chaos Methods",
+            "pages": [
+              "api/basic-chaos",
+              "api/network-chaos",
+              "api/http-chaos",
+              "api/stream-chaos",
+              "api/ai-chaos"
+            ]
+          },
+          {
+            "group": "Resilience API",
+            "pages": [
+              "api/circuit-breaker",
+              "api/retry",
+              "api/bulkhead",
+              "api/timeout",
+              "api/fallback",
+              "api/hedge",
+              "api/rate-limiter",
+              "api/cache"
+            ]
+          },
+          {
+            "group": "AI SDK API",
+            "pages": [
+              "api/cruel-model",
+              "api/cruel-provider",
+              "api/cruel-middleware",
+              "api/cruel-tools"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utilities",
+              "api/errors",
+              "api/types"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Basic Usage",
+            "pages": [
+              "examples/basic-chaos",
+              "examples/network-testing",
+              "examples/api-resilience"
+            ]
+          },
+          {
+            "group": "AI Applications",
+            "pages": [
+              "examples/ai-sdk-streaming",
+              "examples/ai-provider-chaos",
+              "examples/ai-tool-failures"
+            ]
+          },
+          {
+            "group": "Patterns",
+            "pages": [
+              "examples/combining-patterns",
+              "examples/testing-integration",
+              "examples/production-readiness"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Chaos injection for failures, delays, and timeouts",
+    "Network simulation (latency, packet loss, DNS failures)",
+    "HTTP chaos (status codes, rate limits, server errors)",
+    "Stream manipulation (cuts, pauses, corruption)",
+    "AI SDK v6 integration with models, providers, and middleware",
+    "Resilience patterns (circuit breaker, retry, bulkhead, fallback)",
+    "Fetch interception for global chaos",
+    "Presets and scenarios for common failure modes",
+    "Statistics and event tracking",
+    "CLI tool for endpoint testing and benchmarking",
+    "Deterministic mode with seeding",
+    "TypeScript native with zero dependencies"
+  ],
+  "publicApiSurface": [
+    "cruel(fn, options)",
+    "cruel.fail(fn, rate)",
+    "cruel.slow(fn, delay)",
+    "cruel.timeout(fn, rate)",
+    "cruel.flaky(fn)",
+    "cruel.unreliable(fn)",
+    "cruel.nightmare(fn)",
+    "cruel.network.*",
+    "cruel.http.*",
+    "cruel.stream.*",
+    "cruel.ai.*",
+    "cruel.circuitBreaker(fn, options)",
+    "cruel.retry(fn, options)",
+    "cruel.bulkhead(fn, options)",
+    "cruel.withTimeout(fn, options)",
+    "cruel.fallback(fn, options)",
+    "cruel.hedge(fn, options)",
+    "cruel.rateLimiter(fn, options)",
+    "cruel.cache(fn, options)",
+    "cruel.enable(options)",
+    "cruel.disable()",
+    "cruel.patchFetch()",
+    "cruel.intercept(pattern, options)",
+    "cruel.scenario(name, config)",
+    "cruel.play(name)",
+    "cruel.stats()",
+    "cruel.seed(value)",
+    "cruelModel(model, options)",
+    "cruelProvider(provider, options)",
+    "cruelMiddleware(options)",
+    "cruelTools(tools, options)"
+  ]
+}
